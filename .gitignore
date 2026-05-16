@@ -1,0 +1,16 @@
+.env
+*.pem
+__pycache__/
+*.pyc
+.venv/
+venv/
+node_modules/
+dist/
+uploads/
+*.egg-info/
+.pytest_cache/
+.DS_Store
+Thumbs.db
+*.tsbuildinfo
+.vscode/
+.idea/

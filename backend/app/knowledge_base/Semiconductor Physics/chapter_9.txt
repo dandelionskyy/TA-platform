@@ -1,0 +1,21 @@
+###
+Question_CN: 这个PPT中的第一个图片是什么意思？
+Question_EN: What is the meaning of the first picture in this PPT?
+Answer_CN: 1. **功能：**光电探测器是一种将光信号（光子，表示为`hv`）转换为电信号的设备，例如输出电压（`Vout`）或电流。顶部示意图说明了这一基本原理，展示了光进入设备并产生电压的过程。2. **机制：**在特定类型的光电探测器，如**光导体**和**光二极管**中，这种转换通过产生自由的电子-空穴对来实现。当材料吸收光子时，就会发生这种情况。
+Answer_EN: 1. **Function:** A photodetector is a device that converts a light signal (photons, represented by `hv`) into an electrical signal, such as an output voltage (`Vout`) or current. The top diagram illustrates this basic principle, showing light entering a device and an electrical voltage being produced. 2. **Mechanism:** In specific types of photodetectors like **photoconductors** and **photodiodes**, this conversion works by creating free electron-hole pairs. This happens when the material absorbs photons.
+###
+Question_CN: 请解释一下“光子通量随距离变化”的图表。
+Question_EN: Please explain the chart for "Variation of photon flux with distance".
+Answer_CN: [请在这里替换为您对该图表的 **中文** 详细解释。]
+Answer_EN: [Please replace this with your detailed explanation for the chart in **English**.]
+###
+Question_CN: 什么是“穿透深度”(Penetration Depth)？
+Question_EN: What is "Penetration Depth"?
+Answer_CN: [请在这里替换为您对“穿透深度”这个关键概念的 **中文** 定义和解释。]
+Answer_EN: [Please replace this with your definition and explanation for the key concept of "Penetration Depth" in **English**.]
+###
+Question_CN: [请在这里添加另一个您认为用户可能会问的 **中文** 问题]
+Question_EN: [Please add the **English** version of the question here]
+Answer_CN: [请在这里添加对应的 **中文** 答案]
+Answer_EN: [Please add the corresponding **English** answer here]
+###
