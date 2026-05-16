@@ -5,7 +5,7 @@ from functools import lru_cache
 class Settings(BaseSettings):
     # Application
     APP_NAME: str = "TA Platform"
-    DEBUG: bool = True
+    DEBUG: bool = False
     PORT: int = 8000
 
     # Database — SQLite by default for zero-dependency demo

@@ -28,6 +28,10 @@ async def get_db() -> AsyncSession:
 
 
 async def init_db():
+    # Import all models so they register with Base.metadata before create_all
+    from app.models.base import (  # noqa: F401
+        User, Course, Enrollment, Conversation, Message, RobotStatus, RobotQuestion, UsageLog,
+    )
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 

@@ -70,6 +70,9 @@ export default function LoginPage() {
           Don't have an account?{' '}
           <Link to="/register" className="text-white underline hover:text-white/90">Register</Link>
         </p>
+        <div className="mt-4 p-3 rounded-xl bg-white/10 text-white/60 text-xs text-center">
+          Demo: Teacher T00001 | TA TA0001 | Student 20240001 — Password: 123456
+        </div>
       </div>
     </div>
   );

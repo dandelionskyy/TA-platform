@@ -29,12 +29,8 @@ async def send_sms(phone: str) -> bool:
         "used": False,
     }
 
-    if settings.ALIBABA_SMS_ACCESS_KEY and settings.ALIBABA_SMS_SECRET:
-        # TODO: Integrate Alibaba Cloud SMS SDK
-        # For now, log the code (development mode)
-        logger.info(f"SMS code for {phone}: {code}")
-    else:
-        logger.info(f"[DEV] SMS code for {phone}: {code}")
+    msg = f"\n{'='*50}\n>>> VERIFICATION CODE for {phone}: {code} <<<\n{'='*50}\n"
+    print(msg, flush=True)
 
     return True
 

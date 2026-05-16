@@ -3,6 +3,7 @@ import { useAuthStore } from '../stores/authStore';
 import { api } from '../services/api';
 import ChatContainer from '../components/shared/ChatContainer';
 import ChatInput from '../components/shared/ChatInput';
+import RobotMonitor from '../components/robot/RobotMonitor';
 
 interface Conversation {
   id: string;
@@ -130,6 +131,12 @@ export default function StudentPage() {
               </details>
             );
           })}
+        </div>
+
+        {/* Robot status — compact sidebar card */}
+        <div className="border-t border-[var(--border-color)] pt-2 px-1">
+          <div className="text-xs text-[var(--text-secondary)] uppercase tracking-wider px-2 mb-1">Robot</div>
+          <RobotMonitor role="student" />
         </div>
 
         {/* Bottom bar */}

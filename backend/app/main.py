@@ -16,6 +16,12 @@ async def lifespan(app: FastAPI):
     await init_db()
     # Create uploads dir if needed
     os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
+    # Seed demo accounts (teacher + TA + student) if not exist
+    from app.core.database import AsyncSessionFactory
+    from app.seed_demo import seed_demo_accounts
+    async with AsyncSessionFactory() as db:
+        await seed_demo_accounts(db)
+        await db.commit()
     yield
     # Shutdown
     await close_db()
