@@ -1,4 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import BaseModel, Field
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.core.dependencies import get_current_user
@@ -11,8 +13,18 @@ from app.schemas.auth import (
     TokenResponse,
     RefreshRequest,
 )
-from app.services.auth_service import register_user, login_user, refresh_access_token
+from app.services.auth_service import register_user, login_user, refresh_access_token, revoke_refresh_token
 from app.services.sms_service import send_sms
+from app.core.dependencies import RequireTeacher
+from app.core.security import hash_password
+
+
+class ProvisionUserRequest(BaseModel):
+    student_id: str = Field(..., min_length=1, max_length=20)
+    phone: str = Field(..., min_length=11, max_length=20)
+    password: str = Field(..., min_length=6, max_length=100)
+    display_name: str = Field(default="", max_length=100)
+    role: str = Field(default="ta", pattern="^(ta|student)$")
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -37,9 +49,19 @@ async def login(req: LoginRequest, db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/refresh", response_model=TokenResponse)
-async def refresh(req: RefreshRequest):
-    result = await refresh_access_token(req.refresh_token)
+async def refresh(req: RefreshRequest, db: AsyncSession = Depends(get_db)):
+    result = await refresh_access_token(db, req.refresh_token)
     return result
+
+
+@router.post("/logout")
+async def logout(
+    req: RefreshRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    await revoke_refresh_token(db, req.refresh_token, current_user.id)
+    return {"message": "Logged out"}
 
 
 @router.post("/send-sms")
@@ -53,3 +75,24 @@ async def send_sms_code(req: SendSmsRequest):
 @router.get("/me")
 async def get_me(current_user: User = Depends(get_current_user)):
     return current_user.to_dict()
+
+
+@router.post("/provision")
+async def provision_user(
+    req: ProvisionUserRequest,
+    current_user: User = Depends(RequireTeacher),
+    db: AsyncSession = Depends(get_db),
+):
+    existing = await db.scalar(select(User).where((User.student_id == req.student_id) | (User.phone == req.phone)))
+    if existing:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Student ID or phone already registered")
+    user = User(
+        student_id=req.student_id,
+        phone=req.phone,
+        password_hash=hash_password(req.password),
+        display_name=req.display_name or req.student_id,
+        role=req.role,
+    )
+    db.add(user)
+    await db.flush()
+    return user.to_dict()

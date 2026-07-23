@@ -2,94 +2,52 @@ import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../stores/authStore';
 import { api } from '../services/api';
+import { LanguageToggle, useLanguage } from '../i18n/LanguageContext';
 
 export default function RegisterPage() {
   const [form, setForm] = useState({ student_id: '', phone: '', password: '', sms_code: '', display_name: '' });
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const [sendingSms, setSendingSms] = useState(false);
-  const [smsCooldown, setSmsCooldown] = useState(0);
+  const [sending, setSending] = useState(false);
+  const [cooldown, setCooldown] = useState(0);
   const { register } = useAuthStore();
+  const { text } = useLanguage();
   const navigate = useNavigate();
+  const update = (field: keyof typeof form) => (event: React.ChangeEvent<HTMLInputElement>) => setForm(prev => ({ ...prev, [field]: event.target.value }));
 
-  const updateField = (field: string) => (e: React.ChangeEvent<HTMLInputElement>) => {
-    setForm(prev => ({ ...prev, [field]: e.target.value }));
-  };
-
-  const handleSendSms = async () => {
-    if (!form.phone || form.phone.length < 11) {
-      setError('Please enter a valid phone number');
-      return;
-    }
-    setSendingSms(true);
-    setError('');
+  const sendCode = async () => {
+    if (!/^1\d{10}$/.test(form.phone)) { setError(text('请输入有效的中国大陆手机号。', 'Enter a valid mainland China phone number.')); return; }
+    setSending(true); setError('');
     try {
       await api.sendSms(form.phone);
-      setSmsCooldown(60);
-      const timer = setInterval(() => {
-        setSmsCooldown(prev => {
-          if (prev <= 1) { clearInterval(timer); return 0; }
-          return prev - 1;
-        });
-      }, 1000);
-    } catch (err: any) {
-      setError(err.message || 'Failed to send SMS');
-    } finally {
-      setSendingSms(false);
-    }
+      setCooldown(60);
+      const timer = window.setInterval(() => setCooldown(value => { if (value <= 1) { window.clearInterval(timer); return 0; } return value - 1; }), 1000);
+    } catch (err: any) { setError(err.message || text('验证码发送失败。', 'Unable to send code.')); }
+    finally { setSending(false); }
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError('');
-    setLoading(true);
-    try {
-      await register(form);
-      navigate('/student');
-    } catch (err: any) {
-      setError(err.message || 'Registration failed');
-    } finally {
-      setLoading(false);
-    }
+  const submit = async (event: React.FormEvent) => {
+    event.preventDefault(); setError(''); setLoading(true);
+    try { await register(form); navigate('/student', { replace: true }); }
+    catch (err: any) { setError(err.message || text('注册失败。', 'Registration failed.')); }
+    finally { setLoading(false); }
   };
 
   return (
-    <div className="gradient-bg min-h-screen flex items-center justify-center p-4">
-      <div className="glass-card w-full max-w-md p-8 md:p-10">
-        <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold text-white mb-2">Create Account</h1>
-          <p className="text-white/70 text-sm">Register for TA Platform</p>
-        </div>
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <input type="text" value={form.student_id} onChange={updateField('student_id')}
-            placeholder="Student ID" className="w-full px-4 py-3 rounded-xl bg-white/20 border border-white/30 text-white placeholder-white/60 outline-none focus:border-white/60 focus:bg-white/25 transition-all" required />
-          <input type="text" value={form.display_name} onChange={updateField('display_name')}
-            placeholder="Display Name (optional)" className="w-full px-4 py-3 rounded-xl bg-white/20 border border-white/30 text-white placeholder-white/60 outline-none focus:border-white/60 focus:bg-white/25 transition-all" />
-          <input type="text" value={form.phone} onChange={updateField('phone')}
-            placeholder="Phone Number" className="w-full px-4 py-3 rounded-xl bg-white/20 border border-white/30 text-white placeholder-white/60 outline-none focus:border-white/60 focus:bg-white/25 transition-all" required />
-          <div className="flex gap-2">
-            <input type="text" value={form.sms_code} onChange={updateField('sms_code')}
-              placeholder="SMS Code" className="flex-1 px-4 py-3 rounded-xl bg-white/20 border border-white/30 text-white placeholder-white/60 outline-none focus:border-white/60 focus:bg-white/25 transition-all" required />
-            <button type="button" onClick={handleSendSms} disabled={smsCooldown > 0 || sendingSms}
-              className="px-4 py-3 rounded-xl bg-white/30 text-white text-sm font-medium hover:bg-white/40 disabled:opacity-50 transition-all whitespace-nowrap cursor-pointer">
-              {smsCooldown > 0 ? `${smsCooldown}s` : sendingSms ? '...' : 'Get Code'}
-            </button>
-          </div>
-          <input type="password" value={form.password} onChange={updateField('password')}
-            placeholder="Password (6+ characters)" className="w-full px-4 py-3 rounded-xl bg-white/20 border border-white/30 text-white placeholder-white/60 outline-none focus:border-white/60 focus:bg-white/25 transition-all" required minLength={6} />
-          {error && (
-            <div className="text-red-300 text-sm bg-red-500/20 rounded-lg px-4 py-2">{error}</div>
-          )}
-          <button type="submit" disabled={loading}
-            className="w-full py-3 rounded-xl bg-white text-purple-700 font-semibold hover:bg-white/90 disabled:opacity-50 transition-all cursor-pointer">
-            {loading ? 'Creating account...' : 'Register'}
-          </button>
+    <main className="auth-page">
+      <section className="auth-panel">
+        <header className="mb-6"><div className="flex items-start justify-between gap-3"><div><p className="mb-2 text-xs font-semibold uppercase tracking-[.16em] text-[var(--accent-color)]">TA Platform</p><h1 className="text-2xl font-semibold">{text('创建学生账号', 'Create student account')}</h1></div><LanguageToggle /></div><p className="mt-2 text-sm muted">{text('教师和助教账号由教学团队创建。', 'Teacher and TA accounts are issued by the teaching team.')}</p></header>
+        <form onSubmit={submit} className="space-y-3.5">
+          <label className="block text-sm font-medium">{text('学号', 'Student ID')}<input className="auth-input mt-1.5" value={form.student_id} onChange={update('student_id')} required /></label>
+          <label className="block text-sm font-medium">{text('姓名', 'Display name')} <span className="muted font-normal">({text('可选', 'optional')})</span><input className="auth-input mt-1.5" value={form.display_name} onChange={update('display_name')} /></label>
+          <label className="block text-sm font-medium">{text('手机号', 'Phone number')}<input className="auth-input mt-1.5" inputMode="tel" value={form.phone} onChange={update('phone')} required /></label>
+          <div className="flex gap-2"><label className="min-w-0 flex-1 text-sm font-medium">{text('验证码', 'Verification code')}<input className="auth-input mt-1.5" value={form.sms_code} onChange={update('sms_code')} required /></label><button className="btn mt-6 shrink-0" type="button" onClick={sendCode} disabled={sending || cooldown > 0}>{cooldown ? `${cooldown}s` : sending ? text('发送中', 'Sending') : text('发送验证码', 'Send code')}</button></div>
+          <label className="block text-sm font-medium">{text('密码', 'Password')}<input className="auth-input mt-1.5" type="password" minLength={6} value={form.password} onChange={update('password')} autoComplete="new-password" required /></label>
+          {error && <div className="auth-error" role="alert">{error}</div>}
+          <button className="btn btn-primary w-full" type="submit" disabled={loading}>{loading ? text('创建中...', 'Creating account...') : text('创建账号', 'Create account')}</button>
         </form>
-        <p className="text-center mt-6 text-white/70 text-sm">
-          Already have an account?{' '}
-          <Link to="/login" className="text-white underline hover:text-white/90">Sign In</Link>
-        </p>
-      </div>
-    </div>
+        <p className="mt-5 text-center text-sm muted">{text('已经注册？', 'Already registered?')} <Link className="text-[var(--accent-color)] hover:underline" to="/login">{text('登录', 'Sign in')}</Link></p>
+      </section>
+    </main>
   );
 }

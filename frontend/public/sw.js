@@ -1,5 +1,5 @@
 // Simple PWA service worker for offline caching
-const CACHE_NAME = 'ta-platform-v1';
+const CACHE_NAME = 'ta-platform-v5';
 const STATIC_ASSETS = [
   '/',
   '/index.html',
@@ -32,17 +32,8 @@ self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET' || event.request.url.includes('/api/')) {
     return;
   }
-  event.respondWith(
-    caches.match(event.request).then((cached) => {
-      return cached || fetch(event.request).then((response) => {
-        if (response.ok) {
-          const clone = response.clone();
-          caches.open(CACHE_NAME).then((cache) => {
-            cache.put(event.request, clone);
-          });
-        }
-        return response;
-      });
-    })
-  );
+  event.respondWith(fetch(event.request).then((response) => {
+    if (response.ok) caches.open(CACHE_NAME).then((cache) => cache.put(event.request, response.clone()));
+    return response;
+  }).catch(() => caches.match(event.request).then(cached => cached || caches.match('/index.html'))));
 });

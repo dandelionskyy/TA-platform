@@ -1,7 +1,7 @@
 {
-  "name": "TA Platform - Smart Teaching Assistant",
+  "name": "TA Platform",
   "short_name": "TA Platform",
-  "description": "University Teaching Assistant Platform with AI Chatbot",
+  "description": "TA Platform",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#f7f7f8",

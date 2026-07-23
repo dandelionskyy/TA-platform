@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { marked } from 'marked';
 import katex from 'katex';
 import hljs from 'highlight.js';
+import { useLanguage } from '../../i18n/LanguageContext';
 
 interface Props {
   role: string;
@@ -10,6 +11,7 @@ interface Props {
 
 export default function ChatMessage({ role, content }: Props) {
   const contentRef = useRef<HTMLDivElement>(null);
+  const { text } = useLanguage();
 
   useEffect(() => {
     if (role !== 'assistant' || !contentRef.current) return;
@@ -36,11 +38,11 @@ export default function ChatMessage({ role, content }: Props) {
         if (pre) {
           const btn = document.createElement('button');
           btn.className = 'copy-button';
-          btn.textContent = 'Copy';
+          btn.textContent = text('复制', 'Copy');
           btn.onclick = () => {
             navigator.clipboard.writeText((block as HTMLElement).textContent || '').then(() => {
-              btn.textContent = 'Copied!';
-              setTimeout(() => btn.textContent = 'Copy', 2000);
+              btn.textContent = text('已复制', 'Copied!');
+              setTimeout(() => btn.textContent = text('复制', 'Copy'), 2000);
             });
           };
           pre.appendChild(btn);
@@ -52,7 +54,7 @@ export default function ChatMessage({ role, content }: Props) {
     try {
       renderMathElements(contentRef.current);
     } catch {}
-  }, [content, role]);
+  }, [content, role, text]);
 
   const isUser = role === 'user';
 

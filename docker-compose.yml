@@ -31,6 +31,7 @@ services:
     environment:
       DATABASE_URL: postgresql+asyncpg://ta_admin:${DB_PASSWORD:-ta_platform}@postgres:5432/ta_platform
       REDIS_URL: redis://redis:6379
+      USE_REDIS: ${USE_REDIS:-true}
       DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY}
       DEEPSEEK_API_BASE: ${DEEPSEEK_API_BASE:-https://api.deepseek.com}
       DEEPSEEK_MODEL_NAME: ${DEEPSEEK_MODEL_NAME:-deepseek-chat}
@@ -41,12 +42,27 @@ services:
       ALIBABA_SMS_SECRET: ${ALIBABA_SMS_SECRET:-}
       ALIBABA_SMS_SIGN_NAME: ${ALIBABA_SMS_SIGN_NAME:-}
       ALIBABA_SMS_TEMPLATE_CODE: ${ALIBABA_SMS_TEMPLATE_CODE:-}
+      ALIBABA_NLS_APP_KEY: ${ALIBABA_NLS_APP_KEY:-}
+      ALIBABA_NLS_ACCESS_KEY_ID: ${ALIBABA_NLS_ACCESS_KEY_ID:-}
+      ALIBABA_NLS_ACCESS_KEY_SECRET: ${ALIBABA_NLS_ACCESS_KEY_SECRET:-}
+      ALIBABA_ASR_ENDPOINT: ${ALIBABA_ASR_ENDPOINT:-}
+      ALIBABA_TTS_ENDPOINT: ${ALIBABA_TTS_ENDPOINT:-}
+      ALIBABA_TTS_VOICE: ${ALIBABA_TTS_VOICE:-siyue}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost}
+      ROBOT_AUTH_KEYS: ${ROBOT_AUTH_KEYS:-TA-Robot-01:robot-secret-key-change-me}
+      ROBOT_HEARTBEAT_TIMEOUT_SECONDS: ${ROBOT_HEARTBEAT_TIMEOUT_SECONDS:-15}
+      SEED_DEMO_DATA: ${SEED_DEMO_DATA:-false}
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_started
     restart: always
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')\""]
+      interval: 30s
+      timeout: 5s
+      retries: 3
     volumes:
       - uploads:/app/uploads
       - ./backend/app/knowledge_base:/app/app/knowledge_base
@@ -64,7 +80,8 @@ services:
       - ./certbot/www:/var/www/certbot:ro
       - /etc/letsencrypt:/etc/letsencrypt:ro
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
     restart: always
 
 volumes:

@@ -172,6 +172,8 @@ async def get_deepseek_response(
     file_data: Optional[bytes] = None,
     filename: Optional[str] = None,
     conversation_history: Optional[List[Dict[str, str]]] = None,
+    reference_context: Optional[str] = None,
+    reference_name: Optional[str] = None,
 ) -> Dict:
     """
     Returns dict with keys: response (str), context_source (str), filename_display (str)
@@ -211,7 +213,13 @@ async def get_deepseek_response(
                 context_source = "manual_file"
                 filename_display = filename
 
-        # --------- Chapter Mode ---------
+        # --------- Managed Course Material ---------
+        elif reference_context:
+            file_context = reference_context
+            context_source = "course_material"
+            filename_display = reference_name or "Course chapter materials"
+
+        # --------- Legacy Chapter Mode ---------
         elif '-ch' in mode:
             try:
                 course_name_slug, chapter_index_str = mode.split('-ch')
@@ -249,28 +257,19 @@ async def get_deepseek_response(
 
         # --------- Build System Prompt ---------
         if file_context:
-            if context_source in ["txt", "pdf"]:
-                page_query_hint = ""
-                if extract_page_numbers(user_question):
-                    page_query_hint = "\nNote: The user is querying specific page content. Please accurately reference the [Page X] content."
-
-                system_prompt = (
-                    "You are an expert teaching assistant in the field of Electronic and Information Engineering. "
-                    "Answer questions using the following priority:\n"
-                    "1. First, answer based on the provided context (TXT knowledge base or PDF content)\n"
-                    "2. If the context does not contain the answer, answer based on your expertise (restricted to Electronic and Information Engineering)\n"
-                    "3. If the user asks about a specific page, accurately reference the [Page X] content\n"
-                    "4. Do not answer questions unrelated to Electronic and Information Engineering\n"
-                    f"{page_query_hint}\n"
-                    "Respond in the same language (Chinese or English) as the user."
-                )
-                combined_input = (
-                    f"**Context ({filename_display}):**\n---\n{file_context}\n---\n\n"
-                    f"**User Question:**\n{user_question}"
-                )
-            else:
-                system_prompt = SYSTEM_PROMPTS.get(mode, SYSTEM_PROMPTS["chatbot"])
-                combined_input = user_question
+            page_query_hint = ""
+            if extract_page_numbers(user_question):
+                page_query_hint = "\nThe user mentioned a page number. Use matching [Page X] context when available."
+            system_prompt = (
+                "You are a careful university teaching assistant. Answer primarily from the supplied course material. "
+                "If the material does not contain the answer, clearly say that first, then provide a concise general explanation. "
+                "Do not invent quotations, page numbers, formulas, or conclusions that are absent from the material. "
+                f"{page_query_hint}\nRespond in the same language as the user."
+            )
+            combined_input = (
+                f"**Course context ({filename_display}):**\n---\n{file_context}\n---\n\n"
+                f"**User question:**\n{user_question}"
+            )
         else:
             system_prompt = SYSTEM_PROMPTS.get(mode, SYSTEM_PROMPTS["chatbot"])
             combined_input = user_question
@@ -305,6 +304,9 @@ async def get_deepseek_response(
         }
 
     except Exception as e:
-        error_message = f"Error calling DeepSeek API: {str(e)}"
-        print(error_message)
-        return {"response": error_message, "context_source": "none", "filename_display": ""}
+        print(f"DeepSeek request failed: {type(e).__name__}: {e}")
+        return {
+            "response": "The assistant is temporarily unavailable. Please try again in a moment.",
+            "context_source": "none",
+            "filename_display": "",
+        }

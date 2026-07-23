@@ -8,6 +8,8 @@ ROBOT_ID = os.environ.get("ROBOT_ID", "TA-Robot-01")
 
 # Auth key for the robot (set on server side too)
 AUTH_KEY = os.environ.get("ROBOT_AUTH_KEY", "robot-secret-key-change-me")
+VOICE_ENABLED = os.environ.get("ROBOT_VOICE_ENABLED", "false").lower() in {"1", "true", "yes"}
+VOICE_INTERVAL_SECONDS = float(os.environ.get("ROBOT_VOICE_INTERVAL_SECONDS", "6"))
 
 # Audio settings
 MIC_SAMPLE_RATE = 16000

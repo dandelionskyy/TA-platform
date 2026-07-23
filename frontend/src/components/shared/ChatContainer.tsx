@@ -3,6 +3,7 @@ import { api } from '../../services/api';
 import ChatMessage from './ChatMessage';
 import TypingIndicator from './TypingIndicator';
 import SkeletonLoader from './SkeletonLoader';
+import { useLanguage } from '../../i18n/LanguageContext';
 
 interface Props {
   chatId: string;
@@ -17,6 +18,7 @@ interface Message {
 }
 
 export default function ChatContainer({ chatId, mode }: Props) {
+  const { text } = useLanguage();
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(false);
   const [isTyping, setIsTyping] = useState(false);
@@ -75,13 +77,13 @@ export default function ChatContainer({ chatId, mode }: Props) {
       {welcomeHTML && messages.length === 0 ? (
         <div className="flex flex-col items-center justify-center h-full text-center px-5">
           <h1 className="text-[2.4em] text-[var(--text-primary)] mb-4 font-bold">
-            <span className="typewriter">AI Learning Assistant</span>
+            <span className="typewriter">{text('AI 学习助教', 'AI Learning Assistant')}</span>
           </h1>
           <div className="flex gap-5 justify-center flex-wrap mt-5">
             {[
-              { title: 'Explain a Concept', desc: '"What is a P-N junction?"' },
-              { title: 'Summarize a Chapter', desc: '"Give me the key points of Chapter 3."' },
-              { title: 'Ask for Examples', desc: '"Show me an example of nodal analysis."' },
+              { title: text('解释一个概念', 'Explain a concept'), desc: text('“什么是 P-N 结？”', '"What is a P-N junction?"') },
+              { title: text('总结一个章节', 'Summarize a chapter'), desc: text('“请总结第三章的重点。”', '"Give me the key points of Chapter 3."') },
+              { title: text('请求一个例子', 'Ask for examples'), desc: text('“请举例说明节点分析。”', '"Show me an example of nodal analysis."') },
             ].map((card, i) => (
               <div key={i}
                 className="bg-[var(--card-bg)] border border-[var(--border-color)] rounded-xl p-5 w-[220px] cursor-pointer

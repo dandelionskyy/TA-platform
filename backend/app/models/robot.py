@@ -10,12 +10,14 @@ class RobotStatus(Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     robot_name: Mapped[str] = mapped_column(String(100), default="TA-Robot-01")
+    robot_id: Mapped[str] = mapped_column(String(100), unique=True, default="TA-Robot-01", index=True)
     status: Mapped[str] = mapped_column(String(20), default="standby")  # active, standby, offline, charging
     battery_pct: Mapped[int] = mapped_column(Integer, default=100)
     position_x: Mapped[float] = mapped_column(Float, nullable=True)
     position_y: Mapped[float] = mapped_column(Float, nullable=True)
     position_label: Mapped[str] = mapped_column(String(200), default="")
     last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    last_heartbeat_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
 
@@ -26,6 +28,9 @@ class RobotQuestion(Base):
     robot_id: Mapped[str] = mapped_column(String(36), ForeignKey("robot_status.id"), nullable=False)
     student_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"), nullable=True)
     question_text: Mapped[str] = mapped_column(Text, nullable=False)
+    asr_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     response_text: Mapped[str] = mapped_column(Text, nullable=True)
+    mode: Mapped[str] = mapped_column(String(20), default="voice")
+    processing_status: Mapped[str] = mapped_column(String(20), default="completed")
     voice_audio_url: Mapped[str] = mapped_column(String(500), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

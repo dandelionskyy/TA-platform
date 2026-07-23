@@ -40,6 +40,31 @@ def require_role(*roles: str):
     return role_checker
 
 
+async def require_teacher_course_access(
+    course_id: str,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> User:
+    """Verify that a teacher owns or a TA is assigned to a course."""
+    from app.models.course import Course, CourseStaff
+    from sqlalchemy import exists
+
+    if current_user.role == "teacher":
+        owns = await db.scalar(select(exists().where(
+            Course.id == course_id, Course.teacher_id == current_user.id
+        )))
+        if owns:
+            return current_user
+    if current_user.role == "ta":
+        assigned = await db.scalar(select(exists().where(
+            CourseStaff.course_id == course_id, CourseStaff.user_id == current_user.id,
+            CourseStaff.role == "ta"
+        )))
+        if assigned:
+            return current_user
+    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Course access denied")
+
+
 # Convenience dependencies
 RequireTeacher = require_role("teacher")
 RequireTA = require_role("ta")

@@ -1,6 +1,10 @@
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
+from datetime import datetime, timezone, timedelta
+from app.core.config import get_settings
+
+settings = get_settings()
 from app.core.database import get_db
 from app.core.dependencies import get_current_user
 from app.models.user import User
@@ -32,9 +36,15 @@ async def get_robot_status(
             "total_questions_today": 0,
         }
 
+    if robot.last_heartbeat_at:
+        heartbeat = robot.last_heartbeat_at
+        if heartbeat.tzinfo is None:
+            heartbeat = heartbeat.replace(tzinfo=timezone.utc)
+        if datetime.now(timezone.utc) - heartbeat > timedelta(seconds=settings.ROBOT_HEARTBEAT_TIMEOUT_SECONDS):
+            robot.status = "offline"
+
     # Count today's questions
     from sqlalchemy import cast, Date
-    from datetime import datetime, timezone
     today = datetime.now(timezone.utc).date()
     question_count = (await db.execute(
         select(func.count(RobotQuestion.id))
@@ -43,6 +53,7 @@ async def get_robot_status(
     )).scalar() or 0
 
     return {
+        "robot_id": robot.robot_id,
         "robot_name": robot.robot_name,
         "status": robot.status,
         "battery_pct": robot.battery_pct,

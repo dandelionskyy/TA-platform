@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from app.core.config import get_settings
 from app.core.database import init_db, close_db
-from app.routers import auth, chat, teacher, ta, robot
+from app.routers import auth, chat, teacher, ta, robot, courses, ws, academic, messaging
 
 settings = get_settings()
 
@@ -16,14 +16,16 @@ async def lifespan(app: FastAPI):
     await init_db()
     # Create uploads dir if needed
     os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
-    # Seed demo accounts (teacher + TA + student) if not exist
-    from app.core.database import AsyncSessionFactory
-    from app.seed_demo import seed_demo_accounts
-    async with AsyncSessionFactory() as db:
-        await seed_demo_accounts(db)
-        await db.commit()
+    if settings.SEED_DEMO_DATA:
+        from app.core.database import AsyncSessionFactory
+        from app.seed_demo import seed_demo_accounts
+        async with AsyncSessionFactory() as db:
+            await seed_demo_accounts(db)
+            await db.commit()
     yield
     # Shutdown
+    from app.ai.conversation_memory import conversation_memory
+    await conversation_memory.close()
     await close_db()
 
 
@@ -39,7 +41,7 @@ app = FastAPI(
 # CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[origin.strip() for origin in settings.CORS_ORIGINS.split(",") if origin.strip()],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -51,6 +53,11 @@ app.include_router(chat.router)
 app.include_router(teacher.router)
 app.include_router(ta.router)
 app.include_router(robot.router)
+app.include_router(courses.router)
+app.include_router(courses.teacher_router)
+app.include_router(ws.router)
+app.include_router(academic.router)
+app.include_router(messaging.router)
 
 
 @app.get("/api/health")

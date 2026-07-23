@@ -32,20 +32,21 @@ class ConversationMemory:
             self._redis_available = False
             self.redis = None
 
-    async def get_history(self, conversation_id: str, max_messages: int = 10) -> List[Dict[str, str]]:
+    async def get_history(self, conversation_id: str, max_messages: int | None = None) -> List[Dict[str, str]]:
+        max_messages = max_messages or settings.MAX_CONTEXT_MESSAGES
         await self._init_redis()
 
         if self._redis_available and self.redis:
             try:
                 key = f"conv:{conversation_id}:history"
                 raw = await self.redis.lrange(key, -max_messages, -1)
-                return [json.loads(m) for m in raw]
+                return self._trim([json.loads(m) for m in raw])
             except Exception:
                 pass
 
         # In-memory fallback
         msgs = _memory_store.get(conversation_id, [])
-        return msgs[-max_messages:]
+        return self._trim(msgs[-max_messages:])
 
     async def add_message(self, conversation_id: str, role: str, content: str):
         await self._init_redis()
@@ -56,7 +57,7 @@ class ConversationMemory:
             try:
                 key = f"conv:{conversation_id}:history"
                 await self.redis.rpush(key, json.dumps(msg))
-                await self.redis.ltrim(key, -30, -1)
+                await self.redis.ltrim(key, -settings.MAX_CONTEXT_MESSAGES * 2, -1)
                 await self.redis.expire(key, 60 * 60 * 24 * 7)
                 return
             except Exception:
@@ -64,8 +65,20 @@ class ConversationMemory:
 
         # In-memory fallback
         _memory_store[conversation_id].append(msg)
-        if len(_memory_store[conversation_id]) > 30:
-            _memory_store[conversation_id] = _memory_store[conversation_id][-30:]
+        if len(_memory_store[conversation_id]) > settings.MAX_CONTEXT_MESSAGES * 2:
+            _memory_store[conversation_id] = _memory_store[conversation_id][-settings.MAX_CONTEXT_MESSAGES * 2:]
+
+    @staticmethod
+    def _trim(messages: List[Dict[str, str]]) -> List[Dict[str, str]]:
+        remaining = settings.MAX_CONTEXT_CHARS
+        selected: List[Dict[str, str]] = []
+        for message in reversed(messages):
+            content = str(message.get("content", ""))
+            if remaining <= 0:
+                break
+            selected.append({"role": message.get("role", "user"), "content": content[:remaining]})
+            remaining -= len(content)
+        return list(reversed(selected))
 
     async def clear_history(self, conversation_id: str):
         await self._init_redis()

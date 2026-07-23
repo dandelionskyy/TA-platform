@@ -1,8 +1,10 @@
 import { useState, useEffect } from 'react';
 import { api } from '../../services/api';
+import { useLanguage } from '../../i18n/LanguageContext';
 
 interface Props {
   role: 'teacher' | 'ta' | 'student';
+  compact?: boolean;
 }
 
 interface RobotStatus {
@@ -24,13 +26,6 @@ interface RobotQuestion {
   created_at: string;
 }
 
-const STATUS_LABELS: Record<string, string> = {
-  active: 'Active',
-  standby: 'Standby',
-  offline: 'Offline',
-  charging: 'Charging',
-};
-
 const STATUS_COLORS: Record<string, string> = {
   active: '#22c55e',
   standby: '#f59e0b',
@@ -38,7 +33,8 @@ const STATUS_COLORS: Record<string, string> = {
   charging: '#3b82f6',
 };
 
-export default function RobotMonitor({ role }: Props) {
+export default function RobotMonitor({ role, compact = false }: Props) {
+  const { text, locale } = useLanguage();
   const [status, setStatus] = useState<RobotStatus | null>(null);
   const [questions, setQuestions] = useState<RobotQuestion[]>([]);
   const [loading, setLoading] = useState(true);
@@ -47,8 +43,12 @@ export default function RobotMonitor({ role }: Props) {
     loadStatus();
     if (role === 'teacher') loadQuestions();
     const interval = setInterval(loadStatus, 10000); // Poll every 10s
-    return () => clearInterval(interval);
-  }, []);
+    const token = localStorage.getItem('access_token');
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const socket = token ? new WebSocket(`${protocol}//${window.location.host}/ws/robot/viewer?token=${encodeURIComponent(token)}`) : null;
+    if (socket) socket.onmessage = event => { try { const data = JSON.parse(event.data); if (data.type === 'robot_status') setStatus(data); } catch { /* polling remains authoritative */ } };
+    return () => { clearInterval(interval); socket?.close(); };
+  }, [role]);
 
   const loadStatus = async () => {
     try {
@@ -68,15 +68,18 @@ export default function RobotMonitor({ role }: Props) {
 
   if (loading) {
     return <div className="flex items-center gap-3 text-sm text-[var(--text-secondary)]">
-      <div className="skeleton rounded-full" style={{width:12,height:12}} /> Loading robot status...
+      <div className="skeleton rounded-full" style={{width:12,height:12}} /> {text('正在加载机器人状态...', 'Loading robot status...')}
     </div>;
   }
 
   if (!status) {
-    return <p className="text-sm text-[var(--text-secondary)]">No robot connected</p>;
+    return <p className="text-sm text-[var(--text-secondary)]">{text('暂无机器人连接', 'No robot connected')}</p>;
   }
 
   const color = STATUS_COLORS[status.status] || STATUS_COLORS.offline;
+  const statusLabel = ({ active: text('使用中', 'Active'), standby: text('待机', 'Standby'), offline: text('离线', 'Offline'), charging: text('充电中', 'Charging') } as Record<string, string>)[status.status] || status.status;
+
+  if (compact) return <div className="flex items-center gap-2 text-xs"><span className="h-2 w-2 rounded-full" style={{ background: color }} /><span>{statusLabel}</span><span className="ml-auto">{status.battery_pct}%</span></div>;
 
   return (
     <div className="space-y-4">
@@ -85,12 +88,12 @@ export default function RobotMonitor({ role }: Props) {
         {/* Status indicator */}
         <div className="flex items-center gap-2">
           <div className="w-3 h-3 rounded-full" style={{ background: color, boxShadow: `0 0 8px ${color}` }} />
-          <span className="text-sm font-medium">{STATUS_LABELS[status.status] || status.status}</span>
+          <span className="text-sm font-medium">{statusLabel}</span>
         </div>
 
         {/* Battery */}
         <div className="flex items-center gap-2">
-          <span className="text-sm text-[var(--text-secondary)]">Battery</span>
+          <span className="text-sm text-[var(--text-secondary)]">{text('电量', 'Battery')}</span>
           <div className="w-24 h-5 bg-[var(--bg-secondary)] rounded-full overflow-hidden">
             <div
               className="h-full rounded-full transition-all duration-500"
@@ -113,14 +116,14 @@ export default function RobotMonitor({ role }: Props) {
 
         {/* Questions today */}
         <div className="flex items-center gap-1 text-sm text-[var(--text-secondary)]">
-          <span>Questions today:</span>
+          <span>{text('今日提问：', 'Questions today:')}</span>
           <span className="font-semibold text-[var(--text-primary)]">{status.total_questions_today}</span>
         </div>
 
         {/* Last seen */}
         {status.last_seen_at && (
           <div className="text-xs text-[var(--text-secondary)]">
-            Last seen: {new Date(status.last_seen_at).toLocaleTimeString()}
+            {text('最后在线：', 'Last seen: ')}{new Date(status.last_seen_at).toLocaleTimeString(locale)}
           </div>
         )}
       </div>
@@ -133,7 +136,7 @@ export default function RobotMonitor({ role }: Props) {
               fill={color} stroke="white" strokeWidth="0.5">
               <animate attributeName="r" values="3;4;3" dur="2s" repeatCount="indefinite" />
             </circle>
-            <text x="5" y="95" className="text-[10px] fill-[var(--text-secondary)]" fontSize="3">Origin</text>
+            <text x="5" y="95" className="text-[10px] fill-[var(--text-secondary)]" fontSize="3">{text('原点', 'Origin')}</text>
           </svg>
         </div>
       )}
@@ -141,16 +144,16 @@ export default function RobotMonitor({ role }: Props) {
       {/* Teacher-only: question history */}
       {role === 'teacher' && questions.length > 0 && (
         <div>
-          <h4 className="text-sm font-semibold mb-2">Recent Questions</h4>
+          <h4 className="text-sm font-semibold mb-2">{text('最近提问', 'Recent questions')}</h4>
           <div className="space-y-2 max-h-48 overflow-y-auto">
             {questions.map(q => (
               <div key={q.id} className="bg-[var(--bg-secondary)] rounded-lg p-3 text-sm">
                 <div className="flex justify-between text-xs text-[var(--text-secondary)] mb-1">
-                  <span>{q.student_name || 'Anonymous'}</span>
-                  <span>{new Date(q.created_at).toLocaleString()}</span>
+                  <span>{q.student_name || text('匿名学生', 'Anonymous')}</span>
+                  <span>{new Date(q.created_at).toLocaleString(locale)}</span>
                 </div>
-                <p className="font-medium">Q: {q.question_text}</p>
-                {q.response_text && <p className="text-[var(--text-secondary)] mt-1">A: {q.response_text.slice(0, 200)}{q.response_text.length > 200 ? '...' : ''}</p>}
+                <p className="font-medium">{text('问：', 'Q: ')}{q.question_text}</p>
+                {q.response_text && <p className="text-[var(--text-secondary)] mt-1">{text('答：', 'A: ')}{q.response_text.slice(0, 200)}{q.response_text.length > 200 ? '...' : ''}</p>}
               </div>
             ))}
           </div>

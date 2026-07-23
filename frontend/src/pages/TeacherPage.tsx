@@ -1,191 +1,37 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useAuthStore } from '../stores/authStore';
 import { api } from '../services/api';
 import RobotMonitor from '../components/robot/RobotMonitor';
+import { LanguageToggle, useLanguage } from '../i18n/LanguageContext';
 
-interface Student {
-  id: string;
-  student_id: string;
-  display_name: string;
-  phone: string;
-  is_active: boolean;
-}
-
-interface Message {
-  id: string;
-  role: string;
-  content: string;
-  context_source?: string;
-  created_at: string;
-}
-
-interface Conversation {
-  id: string;
-  title: string;
-  created_at: string;
-  updated_at: string;
-}
+interface Student { id: string; student_id: string; display_name: string; phone: string; is_active: boolean; }
+interface Message { id: string; role: string; content: string; created_at: string; }
+interface Conversation { id: string; title: string; updated_at: string; }
+interface Course { id: string; name: string; }
 
 export default function TeacherPage() {
   const { user, logout } = useAuthStore();
-  const [students, setStudents] = useState<Student[]>([]);
-  const [search, setSearch] = useState('');
-  const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
-  const [conversations, setConversations] = useState<Conversation[]>([]);
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [selectedConv, setSelectedConv] = useState<string | null>(null);
-  const [usage, setUsage] = useState<any>(null);
-  const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [dark, setDark] = useState(() => localStorage.getItem('theme') === 'dark');
+  const { text, locale } = useLanguage();
+  const [students, setStudents] = useState<Student[]>([]); const [search, setSearch] = useState(''); const [selectedStudent, setSelectedStudent] = useState<Student | null>(null); const [conversations, setConversations] = useState<Conversation[]>([]); const [messages, setMessages] = useState<Message[]>([]); const [selectedConv, setSelectedConv] = useState<string | null>(null); const [usage, setUsage] = useState<any>(null); const [sidebarOpen, setSidebarOpen] = useState(false); const [dark, setDark] = useState(() => localStorage.getItem('theme') === 'dark'); const [dashboard, setDashboard] = useState<any>(null); const [courses, setCourses] = useState<Course[]>([]); const [newCourse, setNewCourse] = useState(''); const [member, setMember] = useState({ role: 'ta' as 'ta' | 'student', student_id: '', phone: '', password: '', display_name: '', course_id: '' }); const [memberMessage, setMemberMessage] = useState('');
+  useEffect(() => { searchStudents(); api.getTeacherDashboard().then(setDashboard).catch(() => {}); api.getTeacherCourses().then(data => setCourses(data.courses || [])).catch(() => {}); }, []);
+  const searchStudents = async () => { try { const data = await api.getStudents(search); setStudents(data.students || []); } catch {} };
+  const toggleDark = () => { const next = !dark; setDark(next); localStorage.setItem('theme', next ? 'dark' : 'light'); document.documentElement.classList.toggle('dark', next); };
+  const selectStudent = async (student: Student) => { setSelectedStudent(student); setSelectedConv(null); setMessages([]); try { const [convData, usageData] = await Promise.all([api.getStudentConversations(student.id), api.getStudentUsage(student.id)]); setConversations(convData.conversations || []); setUsage(usageData); } catch {} };
+  const selectConversation = async (conversationId: string) => { if (!selectedStudent) return; setSelectedConv(conversationId); try { const data = await api.getStudentMessages(selectedStudent.id, conversationId); setMessages(data.messages || []); } catch {} };
+  const createCourse = async () => { if (!newCourse.trim()) return; try { const course = await api.createCourse({ name: newCourse.trim() }); setCourses(current => [...current, course]); setNewCourse(''); } catch {} };
+  const provisionMember = async () => { if (!member.student_id || !member.phone || !member.password) { setMemberMessage(text('学号、手机号和密码为必填项。', 'Student ID, phone and password are required.')); return; } try { const created = await api.provisionUser(member); if (member.course_id) member.role === 'ta' ? await api.assignTA(member.course_id, created.id) : await api.enrollStudent(member.course_id, created.id); setMember({ role: member.role, student_id: '', phone: '', password: '', display_name: '', course_id: member.course_id }); setMemberMessage(text('账号已创建并分配课程。', 'Account created and assigned.')); searchStudents(); } catch (error: any) { setMemberMessage(error.message || text('无法创建账号。', 'Unable to create account.')); } };
+  const metricLabels: [string, number][] = [[text('学生数', 'Students'), dashboard?.total_students || 0], [text('今日消息', 'Messages today'), dashboard?.total_messages_today || 0], [text('会话数', 'Conversations'), dashboard?.total_conversations || 0], [text('机器人提问', 'Robot questions'), dashboard?.total_robot_questions || 0]];
 
-  useEffect(() => { searchStudents(); }, []);
-
-  const toggleDark = () => {
-    const next = !dark;
-    setDark(next);
-    localStorage.setItem('theme', next ? 'dark' : 'light');
-    document.documentElement.classList.toggle('dark', next);
-  };
-
-  const searchStudents = async () => {
-    try {
-      const data = await api.getStudents(search);
-      setStudents(data.students || []);
-    } catch {}
-  };
-
-  const selectStudent = async (s: Student) => {
-    setSelectedStudent(s);
-    setSelectedConv(null);
-    setMessages([]);
-    try {
-      const [convData, usageData] = await Promise.all([
-        api.getStudentConversations(s.id),
-        api.getStudentUsage(s.id),
-      ]);
-      setConversations(convData.conversations || []);
-      setUsage(usageData);
-    } catch {}
-  };
-
-  const selectConversation = async (convId: string) => {
-    if (!selectedStudent) return;
-    setSelectedConv(convId);
-    try {
-      const data = await api.getStudentMessages(selectedStudent.id, convId);
-      setMessages(data.messages || []);
-    } catch {}
-  };
-
-  return (
-    <div className="flex h-screen bg-[var(--bg-secondary)]">
-      {/* Sidebar */}
-      <aside className={`${sidebarOpen ? 'translate-x-0' : '-translate-x-full'} lg:translate-x-0 fixed lg:relative z-30 w-[260px] h-full bg-[var(--bg-sidebar)] text-[var(--text-sidebar)] flex flex-col p-2.5 transition-transform duration-300`}>
-        <div className="px-2.5 py-3 text-lg font-semibold border-b border-[var(--border-color)] mb-2">Teacher Panel</div>
-        <div className="px-2.5 mb-3">
-          <input type="text" value={search} onChange={e => setSearch(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && searchStudents()}
-            placeholder="Search students..."
-            className="w-full px-3 py-2 rounded-lg bg-white/10 border border-white/20 text-white placeholder-white/50 outline-none text-sm" />
-        </div>
-        <div className="flex-1 overflow-y-auto">
-          {students.map(s => (
-            <button key={s.id} onClick={() => selectStudent(s)}
-              className={`w-full text-left px-3 py-2.5 rounded-md text-sm hover:bg-white/10 transition-colors block ${selectedStudent?.id === s.id ? 'bg-white/15' : ''}`}>
-              <div className="truncate">{s.display_name || s.student_id}</div>
-              <div className="text-xs text-[var(--text-secondary)]">{s.student_id}</div>
-            </button>
-          ))}
-        </div>
-        <div className="border-t border-[var(--border-color)] pt-2.5 px-2.5 space-y-2">
-          <button onClick={toggleDark} className="w-full py-2 rounded-md bg-transparent border border-[var(--text-secondary)] text-[var(--text-sidebar)] text-sm cursor-pointer hover:bg-white/10">{dark ? 'Light' : 'Dark'}</button>
-          <button onClick={logout} className="w-full py-2 rounded-md text-sm text-red-400 hover:text-red-300 cursor-pointer">Logout</button>
-        </div>
-      </aside>
-      {sidebarOpen && <div className="lg:hidden fixed inset-0 z-20 bg-black/50" onClick={() => setSidebarOpen(false)} />}
-
-      {/* Main */}
-      <main className="flex-1 flex flex-col min-w-0 overflow-y-auto">
-        <div className="lg:hidden flex items-center gap-3 px-4 py-3 border-b border-[var(--border-color)] bg-[var(--bg-primary)]">
-          <button onClick={() => setSidebarOpen(true)} className="text-xl cursor-pointer">&#9776;</button>
-          <span className="font-semibold">Teacher Panel</span>
-        </div>
-
-        <div className="flex-1 p-4 md:p-6 space-y-6">
-          {selectedStudent ? (
-            <>
-              {/* Student info + Usage */}
-              <div className="bg-[var(--card-bg)] border border-[var(--border-color)] rounded-xl p-5">
-                <h2 className="text-xl font-semibold mb-1">{selectedStudent.display_name || selectedStudent.student_id}</h2>
-                <p className="text-sm text-[var(--text-secondary)]">{selectedStudent.student_id} | {selectedStudent.phone}</p>
-                {usage && (
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-4">
-                    {[
-                      ['Messages', usage.total_chat_messages],
-                      ['Conversations', usage.total_conversations],
-                      ['Logins', usage.total_login_count],
-                      ['Robot Qs', usage.total_robot_questions],
-                    ].map(([label, val]) => (
-                      <div key={label} className="text-center p-3 rounded-lg bg-[var(--bg-secondary)]">
-                        <div className="text-2xl font-bold text-[var(--accent-color)]">{val}</div>
-                        <div className="text-xs text-[var(--text-secondary)] mt-1">{label}</div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              {/* Conversations */}
-              <div className="bg-[var(--card-bg)] border border-[var(--border-color)] rounded-xl p-5">
-                <h3 className="font-semibold mb-3">Conversation History</h3>
-                <div className="space-y-2 max-h-64 overflow-y-auto">
-                  {conversations.map(c => (
-                    <button key={c.id} onClick={() => selectConversation(c.id)}
-                      className={`w-full text-left px-4 py-3 rounded-lg text-sm hover:bg-[var(--bg-secondary)] transition-colors block ${selectedConv === c.id ? 'bg-[var(--bg-secondary)] ring-1 ring-[var(--accent-color)]' : ''}`}>
-                      <div className="flex justify-between">
-                        <span>{c.title || c.id.slice(0, 8)}</span>
-                        <span className="text-xs text-[var(--text-secondary)]">{c.updated_at ? new Date(c.updated_at).toLocaleDateString() : ''}</span>
-                      </div>
-                    </button>
-                  ))}
-                  {conversations.length === 0 && <p className="text-sm text-[var(--text-secondary)]">No conversations yet</p>}
-                </div>
-              </div>
-
-              {/* Messages */}
-              {selectedConv && messages.length > 0 && (
-                <div className="bg-[var(--card-bg)] border border-[var(--border-color)] rounded-xl p-5">
-                  <h3 className="font-semibold mb-3">Messages</h3>
-                  <div className="space-y-4 max-h-[50vh] overflow-y-auto">
-                    {messages.map(m => (
-                      <div key={m.id} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                        <div className={`max-w-[80%] px-4 py-2.5 rounded-2xl text-sm ${
-                          m.role === 'user'
-                            ? 'bg-[var(--user-message-bg)] text-[var(--user-message-text)] rounded-br-sm'
-                            : 'bg-[var(--bot-message-bg)] text-[var(--text-primary)] rounded-bl-sm'
-                        }`}>
-                          <p className="whitespace-pre-wrap">{m.content}</p>
-                          <p className="text-[10px] mt-1 opacity-60">{new Date(m.created_at).toLocaleString()}</p>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </>
-          ) : (
-            <div className="flex items-center justify-center h-full text-[var(--text-secondary)]">
-              <p>Select a student from the sidebar to view their activity</p>
-            </div>
-          )}
-
-          {/* Robot Monitor */}
-          <div className="bg-[var(--card-bg)] border border-[var(--border-color)] rounded-xl p-5">
-            <h3 className="font-semibold mb-3">Robot Status</h3>
-            <RobotMonitor role="teacher" />
-          </div>
-        </div>
-      </main>
-    </div>
-  );
+  return <div className="app-shell">
+    <aside className={`sidebar ${sidebarOpen ? 'open' : ''}`}><div className="sidebar-header"><div className="sidebar-brand">TA Platform</div><LanguageToggle /></div><div className="px-2.5 py-3 text-xs text-[#9b9ca3]">{text('教师工作台', 'Teacher workspace')}</div><div className="px-2.5 mb-3"><input type="text" value={search} onChange={event => setSearch(event.target.value)} onKeyDown={event => event.key === 'Enter' && searchStudents()} placeholder={text('搜索学生...', 'Search students...')} className="w-full rounded-md border border-white/20 bg-white/10 px-3 py-2 text-sm text-white outline-none placeholder-white/50" /></div><div className="flex-1 overflow-y-auto"><div className="px-2.5 pb-2 pt-1 text-[11px] uppercase tracking-[.08em] text-[#9b9ca3]">{text('工作区', 'Workspace')}</div><Link to="/teacher" className="block rounded-md px-3 py-2 text-sm text-white hover:bg-white/10">{text('教学概览', 'Overview')}</Link><Link to="/teacher/materials" className="block rounded-md px-3 py-2 text-sm text-white hover:bg-white/10">{text('课程资料', 'Course materials')}</Link><Link to="/teacher/assignments" className="block rounded-md px-3 py-2 text-sm text-white hover:bg-white/10">{text('作业管理', 'Assignments')}</Link><Link to="/teacher/attendance" className="block rounded-md px-3 py-2 text-sm text-white hover:bg-white/10">{text('考勤管理', 'Attendance')}</Link><Link to="/teacher/announcements" className="block rounded-md px-3 py-2 text-sm text-white hover:bg-white/10">{text('课程通知', 'Announcements')}</Link><Link to="/teacher/messages" className="block rounded-md px-3 py-2 text-sm text-white hover:bg-white/10">{text('师生沟通', 'Messages')}</Link>{students.map(student => <button key={student.id} onClick={() => selectStudent(student)} className={`mt-1 block w-full rounded-md px-3 py-2.5 text-left text-sm text-white hover:bg-white/10 ${selectedStudent?.id === student.id ? 'bg-white/15' : ''}`}><div className="truncate">{student.display_name || student.student_id}</div><div className="text-xs text-[#9b9ca3]">{student.student_id}</div></button>)}</div><div className="sidebar-footer"><button onClick={toggleDark} className="btn w-full border-white/20 bg-transparent text-sm text-white">{dark ? text('浅色主题', 'Light theme') : text('深色主题', 'Dark theme')}</button><button onClick={logout} className="btn-danger mt-2 w-full text-sm">{text('退出登录', 'Log out')}</button><div className="mt-2 truncate px-1 text-xs text-[#9b9ca3]">{user?.display_name || user?.student_id}</div></div></aside>
+    {sidebarOpen && <button aria-label={text('关闭导航', 'Close navigation')} className="fixed inset-0 z-20 bg-black/50 lg:hidden" onClick={() => setSidebarOpen(false)} />}
+    <main className="workspace overflow-y-auto"><header className="mobile-header"><button onClick={() => setSidebarOpen(true)} className="btn" aria-label={text('打开导航', 'Open navigation')}>☰</button><span className="font-semibold">{text('教师工作台', 'Teacher workspace')}</span><LanguageToggle /><button className="btn ml-auto" onClick={logout}>{text('退出', 'Log out')}</button></header><div className="flex-1 space-y-6 p-4 md:p-7">
+      {!selectedStudent && <div className="grid grid-cols-2 gap-3 md:grid-cols-4">{metricLabels.map(([label, value]) => <div className="panel metric" key={label}><div className="metric-value">{value}</div><div className="mt-1 text-xs muted">{label}</div></div>)}</div>}
+      {!selectedStudent && <section className="panel p-5"><div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="font-semibold">{text('课程管理', 'Courses')}</h2><p className="mt-1 text-sm muted">{text('学生和助教按课程进行权限隔离。', 'Students and assistants are scoped to a course.')}</p></div><div className="flex gap-2"><input className="field max-w-xs" value={newCourse} onChange={event => setNewCourse(event.target.value)} placeholder={text('课程名称', 'Course name')} /><button className="btn-primary rounded-md px-3 py-2 text-sm" onClick={createCourse}>{text('添加课程', 'Add course')}</button></div></div><div className="mt-4 flex flex-wrap gap-2">{courses.map(course => <span key={course.id} className="rounded-md bg-[var(--bg-secondary)] px-3 py-2 text-sm">{course.name}</span>)}{courses.length === 0 && <span className="text-sm muted">{text('暂无课程。', 'No courses yet.')}</span>}</div></section>}
+      {!selectedStudent && <section className="panel p-5"><h2 className="font-semibold">{text('创建账号并分配课程', 'Issue access')}</h2><p className="mt-1 text-sm muted">{text('创建助教或学生账号，并直接分配到课程。', 'Create a TA or student account and assign it to a course.')}</p><div className="mt-4 grid gap-2 md:grid-cols-3"><select className="field" value={member.role} onChange={event => setMember({ ...member, role: event.target.value as 'ta' | 'student' })}><option value="ta">{text('助教', 'Teaching assistant')}</option><option value="student">{text('学生', 'Student')}</option></select><select className="field" value={member.course_id} onChange={event => setMember({ ...member, course_id: event.target.value })}><option value="">{text('不分配课程', 'No course assignment')}</option>{courses.map(course => <option value={course.id} key={course.id}>{course.name}</option>)}</select><input className="field" placeholder={text('姓名', 'Display name')} value={member.display_name} onChange={event => setMember({ ...member, display_name: event.target.value })} /><input className="field" placeholder={text('学号', 'Student ID')} value={member.student_id} onChange={event => setMember({ ...member, student_id: event.target.value })} /><input className="field" placeholder={text('手机号', 'Phone')} value={member.phone} onChange={event => setMember({ ...member, phone: event.target.value })} /><input className="field" placeholder={text('临时密码', 'Temporary password')} type="password" value={member.password} onChange={event => setMember({ ...member, password: event.target.value })} /></div><div className="mt-3 flex items-center gap-3"><button className="btn-primary rounded-md px-3 py-2 text-sm" onClick={provisionMember}>{text('创建账号', 'Create account')}</button>{memberMessage && <span className="text-sm muted">{memberMessage}</span>}</div></section>}
+      {selectedStudent ? <><section className="panel p-5"><div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="text-xl font-semibold">{selectedStudent.display_name || selectedStudent.student_id}</h2><p className="mt-1 text-sm muted">{selectedStudent.student_id} · {selectedStudent.phone}</p></div><button className="btn" onClick={() => setSelectedStudent(null)}>{text('返回学生列表', 'Back to students')}</button></div>{usage && <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-4">{[[text('消息', 'Messages'), usage.total_chat_messages], [text('会话', 'Conversations'), usage.total_conversations], [text('登录', 'Logins'), usage.total_login_count], [text('机器人提问', 'Robot questions'), usage.total_robot_questions]].map(([label, value]) => <div className="rounded-md bg-[var(--bg-secondary)] p-3 text-center" key={String(label)}><div className="text-2xl font-semibold text-[var(--accent-color)]">{value}</div><div className="mt-1 text-xs muted">{label}</div></div>)}</div>}</section><section className="panel p-5"><h3 className="mb-3 font-semibold">{text('会话历史', 'Conversation history')}</h3><div className="space-y-2">{conversations.map(conversation => <button key={conversation.id} onClick={() => selectConversation(conversation.id)} className={`block w-full rounded-md px-4 py-3 text-left text-sm hover:bg-[var(--bg-secondary)] ${selectedConv === conversation.id ? 'bg-[var(--accent-muted)]' : ''}`}><div className="flex justify-between gap-3"><span>{conversation.title || conversation.id.slice(0, 8)}</span><span className="text-xs muted">{conversation.updated_at ? new Date(conversation.updated_at).toLocaleDateString(locale) : ''}</span></div></button>)}{conversations.length === 0 && <p className="text-sm muted">{text('暂无会话。', 'No conversations yet.')}</p>}</div>{selectedConv && messages.length > 0 && <div className="mt-5 space-y-3 border-t border-[var(--border-color)] pt-5"><h3 className="font-semibold">{text('消息内容', 'Messages')}</h3>{messages.map(message => <div key={message.id} className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}><div className={`max-w-[80%] rounded-xl px-4 py-3 text-sm ${message.role === 'user' ? 'bg-[var(--user-message-bg)] text-[var(--user-message-text)]' : 'bg-[var(--bot-message-bg)]'}`}><p className="whitespace-pre-wrap">{message.content}</p><p className="mt-1 text-[10px] opacity-60">{new Date(message.created_at).toLocaleString(locale)}</p></div></div>)}</div>}</section></> : <div className="flex min-h-32 items-center justify-center text-sm muted">{text('从左侧选择学生查看学习活动。', 'Select a student from the sidebar to view activity.')}</div>}
+      <section className="panel p-5"><h3 className="mb-3 font-semibold">{text('机器人状态', 'Robot status')}</h3><RobotMonitor role="teacher" /></section>
+    </div></main>
+  </div>;
 }

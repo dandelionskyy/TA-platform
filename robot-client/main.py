@@ -7,10 +7,11 @@ import asyncio
 import json
 import websockets
 import logging
-from config import SERVER_URL, ROBOT_ID, AUTH_KEY
+from config import SERVER_URL, ROBOT_ID, AUTH_KEY, VOICE_ENABLED, VOICE_INTERVAL_SECONDS
 from telemetry import TelemetryReader
 from audio_capture import AudioCapture
 from audio_player import AudioPlayer
+import uuid
 
 logging.basicConfig(level=logging.INFO, format='[%(asctime)s] %(message)s')
 logger = logging.getLogger(__name__)
@@ -42,6 +43,23 @@ async def main():
 
                 telemetry_task = asyncio.create_task(send_telemetry())
 
+                async def send_voice_questions():
+                    while VOICE_ENABLED:
+                        try:
+                            audio_b64 = await asyncio.to_thread(audio_cap.record_to_base64, 5.0)
+                            if audio_b64:
+                                await ws.send(json.dumps({
+                                    "type": "voice_question",
+                                    "request_id": str(uuid.uuid4()),
+                                    "audio_base64": audio_b64,
+                                    "content_type": "audio/wav",
+                                }))
+                        except Exception as e:
+                            logger.error(f"Voice capture error: {e}")
+                        await asyncio.sleep(VOICE_INTERVAL_SECONDS)
+
+                voice_task = asyncio.create_task(send_voice_questions()) if VOICE_ENABLED else None
+
                 # Listen for server messages
                 try:
                     async for message in ws:
@@ -64,7 +82,8 @@ async def main():
                             elif msg_type == "move":
                                 x, y = data.get("x"), data.get("y")
                                 logger.info(f"Move command: ({x}, {y})")
-                                # TODO: Send motor commands via motor_controller
+                                if x is not None and y is not None:
+                                    logger.info("Move target received; navigation is hardware-specific")
 
                         except json.JSONDecodeError:
                             logger.warning(f"Invalid message: {message[:100]}")
@@ -73,6 +92,8 @@ async def main():
                     logger.warning("Connection closed")
                 finally:
                     telemetry_task.cancel()
+                    if voice_task:
+                        voice_task.cancel()
 
         except (websockets.exceptions.ConnectionClosed, ConnectionRefusedError, OSError) as e:
             logger.error(f"Connection failed: {e}")

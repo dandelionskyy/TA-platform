@@ -1,6 +1,6 @@
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, desc
+from sqlalchemy import select, func, desc, exists
 from app.core.database import get_db
 from app.core.dependencies import RequireTeacher
 from app.models.user import User
@@ -12,6 +12,15 @@ from app.schemas.usage import StudentUsageResponse
 router = APIRouter(prefix="/api/teacher", tags=["teacher"])
 
 
+async def teacher_can_access_student(db: AsyncSession, teacher_id: str, student_id: str) -> bool:
+    from app.models.course import Course, Enrollment
+    return bool(await db.scalar(select(exists().where(
+        Enrollment.student_id == student_id,
+        Enrollment.course_id == Course.id,
+        Course.teacher_id == teacher_id,
+    ))))
+
+
 @router.get("/students")
 async def list_students(
     search: str = Query("", max_length=100),
@@ -21,7 +30,10 @@ async def list_students(
     db: AsyncSession = Depends(get_db),
 ):
     offset = (page - 1) * page_size
-    query = select(User).where(User.role == "student")
+    from app.models.course import Course, Enrollment
+    query = select(User).join(Enrollment, Enrollment.student_id == User.id).join(Course, Course.id == Enrollment.course_id).where(
+        User.role == "student", Course.teacher_id == current_user.id
+    ).distinct()
     if search:
         query = query.where(
             (User.student_id.ilike(f"%{search}%")) | (User.display_name.ilike(f"%{search}%"))
@@ -29,7 +41,9 @@ async def list_students(
     result = await db.execute(query.order_by(User.student_id).offset(offset).limit(page_size))
     students = result.scalars().all()
 
-    count_query = select(func.count(User.id)).where(User.role == "student")
+    count_query = select(func.count(User.id)).join(Enrollment, Enrollment.student_id == User.id).join(Course, Course.id == Enrollment.course_id).where(
+        User.role == "student", Course.teacher_id == current_user.id
+    ).distinct()
     if search:
         count_query = count_query.where(
             (User.student_id.ilike(f"%{search}%")) | (User.display_name.ilike(f"%{search}%"))
@@ -53,6 +67,8 @@ async def get_student_conversations(
     db: AsyncSession = Depends(get_db),
 ):
     """Teacher can view any student's full conversation list."""
+    if not await teacher_can_access_student(db, current_user.id, student_id):
+        raise HTTPException(status_code=403, detail="Student is outside your courses")
     offset = (page - 1) * page_size
     result = await db.execute(
         select(Conversation)
@@ -92,16 +108,20 @@ async def get_student_messages(
     db: AsyncSession = Depends(get_db),
 ):
     """Teacher can view full message content for any student's conversation."""
+    if not await teacher_can_access_student(db, current_user.id, student_id):
+        raise HTTPException(status_code=403, detail="Student is outside your courses")
     offset = (page - 1) * page_size
     result = await db.execute(
-        select(Message)
-        .where(Message.conversation_id == conversation_id)
+        select(Message).join(Conversation, Message.conversation_id == Conversation.id)
+        .where(Message.conversation_id == conversation_id, Conversation.user_id == student_id)
         .order_by(Message.created_at)
         .offset(offset).limit(page_size)
     )
     messages = result.scalars().all()
     count = (await db.execute(
-        select(func.count(Message.id)).where(Message.conversation_id == conversation_id)
+        select(func.count(Message.id)).join(Conversation, Message.conversation_id == Conversation.id).where(
+            Message.conversation_id == conversation_id, Conversation.user_id == student_id
+        )
     )).scalar() or 0
 
     return {
@@ -128,6 +148,8 @@ async def get_student_usage(
     db: AsyncSession = Depends(get_db),
 ):
     """Teacher can view detailed usage stats for any student."""
+    if not await teacher_can_access_student(db, current_user.id, student_id):
+        raise HTTPException(status_code=403, detail="Student is outside your courses")
     # Message count
     msg_count = (await db.execute(
         select(func.count(Message.id))
@@ -186,14 +208,25 @@ async def teacher_dashboard(
         select(func.count(User.id)).where(User.role == "student")
     )).scalar() or 0
 
-    total_messages_today = 0  # TODO: filter by today's date
+    from datetime import datetime, timezone
+    from sqlalchemy import cast, Date
+    today = datetime.now(timezone.utc).date()
+    total_messages_today = (await db.execute(
+        select(func.count(Message.id)).where(cast(Message.created_at, Date) == today)
+    )).scalar() or 0
 
+    from app.models.course import Course, Enrollment
     total_conversations = (await db.execute(
-        select(func.count(Conversation.id))
+        select(func.count(Conversation.id)).join(Enrollment, Enrollment.student_id == Conversation.user_id).join(
+            Course, Course.id == Enrollment.course_id
+        ).where(Course.teacher_id == current_user.id)
     )).scalar() or 0
 
     total_robot_questions = (await db.execute(
-        select(func.count(RobotQuestion.id))
+        select(func.count(RobotQuestion.id)).join(User, User.id == RobotQuestion.student_id, isouter=True)
+        .join(Enrollment, Enrollment.student_id == User.id, isouter=True)
+        .join(Course, Course.id == Enrollment.course_id, isouter=True)
+        .where((Course.teacher_id == current_user.id) | (RobotQuestion.student_id.is_(None)))
     )).scalar() or 0
 
     return {

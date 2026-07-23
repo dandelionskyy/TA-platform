@@ -1,0 +1,44 @@
+events { worker_connections 1024; }
+http {
+  include /etc/nginx/mime.types;
+  client_max_body_size 10m;
+  limit_req_zone $binary_remote_addr zone=api_limit:10m rate=30r/s;
+  limit_req_zone $binary_remote_addr zone=sms_limit:10m rate=1r/m;
+
+  server {
+    listen 80;
+    server_name your-domain.example;
+    return 301 https://$host$request_uri;
+  }
+
+  server {
+    listen 443 ssl http2;
+    server_name your-domain.example;
+    ssl_certificate /etc/letsencrypt/live/your-domain.example/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/your-domain.example/privkey.pem;
+    add_header X-Content-Type-Options nosniff always;
+    add_header X-Frame-Options SAMEORIGIN always;
+    add_header Referrer-Policy strict-origin-when-cross-origin always;
+
+    location /api/ {
+      limit_req zone=api_limit burst=20 nodelay;
+      proxy_pass http://backend:8000;
+      proxy_set_header Host $host;
+      proxy_set_header X-Real-IP $remote_addr;
+      proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+      proxy_set_header X-Forwarded-Proto https;
+      proxy_set_header Authorization $http_authorization;
+      proxy_read_timeout 120s;
+    }
+    location /ws/ {
+      proxy_pass http://backend:8000;
+      proxy_http_version 1.1;
+      proxy_set_header Upgrade $http_upgrade;
+      proxy_set_header Connection "upgrade";
+      proxy_set_header Host $host;
+      proxy_read_timeout 3600s;
+    }
+    location /static/ { alias /usr/share/nginx/html/static/; expires 30d; add_header Cache-Control "public, immutable"; }
+    location / { root /usr/share/nginx/html; index index.html; try_files $uri $uri/ /index.html; }
+  }
+}
