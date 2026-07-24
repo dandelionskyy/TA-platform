@@ -5,7 +5,7 @@ import uuid
 from pathlib import Path
 
 import aiofiles
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import exists, func, select
@@ -43,6 +43,10 @@ class ChapterUpdate(BaseModel):
 
 class MemberRequest(BaseModel):
     user_id: str
+
+
+class BulkEnrollmentRequest(BaseModel):
+    student_ids: list[str] = Field(..., min_length=1, max_length=200)
 
 
 def _iso(value) -> str | None:
@@ -329,6 +333,79 @@ async def create_course(
             db.add(CourseChapter(course_id=course.id, title=title.strip(), sort_order=index, created_by=current_user.id))
     await db.flush()
     return await serialize_course(db, course)
+
+
+@teacher_router.post("/courses/{course_id}/students/bulk")
+async def enroll_students_bulk(
+    course_id: str,
+    payload: BulkEnrollmentRequest,
+    current_user: User = Depends(RequireTeacher),
+    db: AsyncSession = Depends(get_db),
+):
+    owns = await db.scalar(select(exists().where(Course.id == course_id, Course.teacher_id == current_user.id)))
+    if not owns:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Course access denied")
+
+    requested_ids = list(dict.fromkeys(payload.student_ids))
+    student_result = await db.execute(select(User).where(
+        User.id.in_(requested_ids), User.role == "student", User.is_active.is_(True),
+    ))
+    students = student_result.scalars().all()
+    valid_ids = {student.id for student in students}
+
+    existing_result = await db.execute(select(Enrollment.student_id).where(
+        Enrollment.course_id == course_id, Enrollment.student_id.in_(valid_ids or {""}),
+    ))
+    existing_ids = set(existing_result.scalars().all())
+    added_ids = []
+    for student in students:
+        if student.id not in existing_ids:
+            db.add(Enrollment(course_id=course_id, student_id=student.id))
+            added_ids.append(student.id)
+
+    return {
+        "message": "Students enrolled",
+        "added_count": len(added_ids),
+        "skipped_count": len(requested_ids) - len(added_ids),
+        "student_ids": added_ids,
+    }
+
+
+@teacher_router.get("/courses/{course_id}/available-students")
+async def available_course_students(
+    course_id: str,
+    search: str = Query("", max_length=100),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=200),
+    current_user: User = Depends(RequireTeacher),
+    db: AsyncSession = Depends(get_db),
+):
+    owns = await db.scalar(select(exists().where(Course.id == course_id, Course.teacher_id == current_user.id)))
+    if not owns:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Course access denied")
+
+    enrolled_ids = select(Enrollment.student_id).where(Enrollment.course_id == course_id)
+    query = select(User).where(
+        User.role == "student",
+        User.is_active.is_(True),
+        ~User.id.in_(enrolled_ids),
+    )
+    if search.strip():
+        term = f"%{search.strip()}%"
+        query = query.where(
+            (User.student_id.ilike(term))
+            | (User.display_name.ilike(term))
+            | (User.phone.ilike(term))
+        )
+
+    count = (await db.execute(select(func.count()).select_from(query.subquery()))).scalar() or 0
+    result = await db.execute(query.order_by(User.student_id).offset((page - 1) * page_size).limit(page_size))
+    return {
+        "students": [student.to_dict() for student in result.scalars().all()],
+        "total": count,
+        "page": page,
+        "page_size": page_size,
+    }
 
 
 @teacher_router.post("/courses/{course_id}/students/{student_id}")

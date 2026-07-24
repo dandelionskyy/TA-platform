@@ -249,6 +249,21 @@ class ApiClient {
     return this.request<any>(`/teacher/courses/${courseId}/students/${studentId}`, { method: 'POST' });
   }
 
+  getCourseStudents(courseId: string) {
+    return this.request<any>(`/teacher/courses/${courseId}/students`);
+  }
+
+  getAvailableCourseStudents(courseId: string, search = '', page = 1) {
+    return this.request<any>(`/teacher/courses/${courseId}/available-students?search=${encodeURIComponent(search)}&page=${page}`);
+  }
+
+  enrollStudentsBulk(courseId: string, studentIds: string[]) {
+    return this.request<any>(`/teacher/courses/${courseId}/students/bulk`, {
+      method: 'POST',
+      body: { student_ids: studentIds },
+    });
+  }
+
   assignTA(courseId: string, userId: string) {
     return this.request<any>(`/teacher/courses/${courseId}/tas`, { method: 'POST', body: { user_id: userId } });
   }
