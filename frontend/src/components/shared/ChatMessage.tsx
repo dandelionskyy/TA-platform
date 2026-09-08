@@ -18,15 +18,26 @@ export default function ChatMessage({ role, content }: Props) {
 
     let html: string;
     try {
-      // Pre-process LaTeX delimiters before markdown parsing
+      // Protect LaTeX from Markdown emphasis parsing, then restore rendered KaTeX.
+      const mathFragments: string[] = [];
+      const preserveMath = (formula: string, displayMode: boolean) => {
+        const token = `MATHPLACEHOLDER${mathFragments.length}END`;
+        mathFragments.push(katex.renderToString(formula.trim(), { displayMode, throwOnError: false }));
+        return token;
+      };
       let processed = content
         .replace(/\\\[/g, '$$')
         .replace(/\\\]/g, '$$')
         .replace(/\\\(/g, '$')
-        .replace(/\\\)/g, '$');
+        .replace(/\\\)/g, '$')
+        .replace(/\$\$([\s\S]+?)\$\$/g, (_, formula: string) => preserveMath(formula, true))
+        .replace(/\$([^$\n]+?)\$/g, (_, formula: string) => preserveMath(formula, false));
       html = marked.parse(processed, { async: false }) as string;
+      mathFragments.forEach((fragment, index) => {
+        html = html.replace(`MATHPLACEHOLDER${index}END`, fragment);
+      });
     } catch {
-      html = content;
+      html = marked.parse(content, { async: false }) as string;
     }
     contentRef.current.innerHTML = html;
 
@@ -50,10 +61,6 @@ export default function ChatMessage({ role, content }: Props) {
       } catch {}
     });
 
-    // KaTeX rendering
-    try {
-      renderMathElements(contentRef.current);
-    } catch {}
   }, [content, role, text]);
 
   const isUser = role === 'user';
@@ -66,24 +73,4 @@ export default function ChatMessage({ role, content }: Props) {
       </div>
     </div>
   );
-}
-
-function renderMathElements(container: HTMLElement) {
-  const delimiters = [
-    { left: '$$', right: '$$', display: true },
-    { left: '$', right: '$', display: false },
-  ];
-  const text = container.innerHTML;
-  let result = text;
-  for (const { left, right, display } of delimiters) {
-    const regex = new RegExp(`\\${left}([^$]+?)\\${right}`, 'g');
-    result = result.replace(regex, (_, formula: string) => {
-      try {
-        return katex.renderToString(formula.trim(), { displayMode: display, throwOnError: false });
-      } catch {
-        return _;
-      }
-    });
-  }
-  container.innerHTML = result;
 }

@@ -1,4 +1,4 @@
-import random
+import secrets
 import json
 import logging
 from datetime import datetime, timedelta, timezone
@@ -30,7 +30,37 @@ async def _get_redis():
 
 
 def generate_code() -> str:
-    return f"{random.randint(0, 999999):06d}"
+    return f"{secrets.randbelow(1_000_000):06d}"
+
+
+async def issue_registration_code(phone: str) -> str | None:
+    """Create a short-lived code that the registration page may display directly."""
+    redis = await _get_redis()
+    code = generate_code()
+    now = datetime.now(timezone.utc)
+    record = {
+        "code": code,
+        "expires_at": (now + timedelta(minutes=5)).isoformat(),
+        "used": False,
+        "attempts": 0,
+    }
+
+    if redis:
+        rate_key = f"sms:rate:{phone}"
+        if not await redis.set(rate_key, "1", ex=60, nx=True):
+            return None
+        await redis.set(f"sms:code:{phone}", json.dumps(record), ex=300)
+    else:
+        existing = _sms_store.get(phone)
+        sent_at = existing.get("sent_at") if existing else None
+        if isinstance(sent_at, str):
+            sent_at = datetime.fromisoformat(sent_at)
+        if sent_at and now < sent_at + timedelta(seconds=60):
+            return None
+        record["sent_at"] = now
+        record["expires_at"] = now + timedelta(minutes=5)
+        _sms_store[phone] = record
+    return code
 
 
 async def send_sms(phone: str) -> bool:
@@ -38,28 +68,9 @@ async def send_sms(phone: str) -> bool:
     Send SMS verification code via Alibaba Cloud Dysmsapi.
     Falls back to logging the code if API keys are not configured.
     """
-    redis = await _get_redis()
-    code = generate_code()
-    record = {
-        "code": code,
-        "expires_at": (datetime.now(timezone.utc) + timedelta(minutes=5)).isoformat(),
-        "used": False,
-        "attempts": 0,
-    }
-
-    if redis:
-        rate_key = f"sms:rate:{phone}"
-        if await redis.exists(rate_key):
-            return False
-        await redis.set(rate_key, "1", ex=60)
-        await redis.set(f"sms:code:{phone}", json.dumps(record), ex=300)
-    else:
-        existing = _sms_store.get(phone)
-        if existing and datetime.now(timezone.utc) < existing["sent_at"] + timedelta(seconds=60):
-            return False
-        record["sent_at"] = datetime.now(timezone.utc).isoformat()
-        record["expires_at"] = datetime.now(timezone.utc) + timedelta(minutes=5)
-        _sms_store[phone] = record
+    code = await issue_registration_code(phone)
+    if code is None:
+        return False
 
     if settings.ALIBABA_SMS_ACCESS_KEY and settings.ALIBABA_SMS_SECRET and settings.ALIBABA_SMS_SIGN_NAME and settings.ALIBABA_SMS_TEMPLATE_CODE:
         try:

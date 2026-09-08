@@ -51,6 +51,12 @@ def _ensure_legacy_columns(sync_conn):
     additions = {
         "users": {"last_login_at": "DATETIME"},
         "conversations": {"chapter_id": "VARCHAR(36)"},
+        "file_assets": {
+            "stored_path": "VARCHAR(500)",
+            "extracted_text": "TEXT DEFAULT ''",
+            "page_count": "INTEGER",
+            "is_active": "BOOLEAN DEFAULT TRUE",
+        },
         "usage_logs": {"course_id": "VARCHAR(36)"},
         "robot_status": {"robot_id": "VARCHAR(100)", "last_heartbeat_at": "DATETIME"},
         "robot_questions": {

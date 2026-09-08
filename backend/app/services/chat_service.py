@@ -1,16 +1,106 @@
+from pathlib import Path
 from typing import Optional, List, Dict
+import os
+import uuid
+
+import aiofiles
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, desc, exists
+from sqlalchemy import select, func, desc, exists, update
 from app.models.conversation import Conversation, Message
+from app.models.file_asset import FileAsset
 from app.models.usage_log import UsageLog
 from app.models.user import User
 from app.ai.deepseek_client import get_deepseek_response
 from app.ai.conversation_memory import conversation_memory
 from app.core.config import get_settings
-import uuid
+from app.services.material_service import extract_material_text
 from datetime import datetime, timezone
 
 settings = get_settings()
+
+
+def serialize_file_asset(asset: FileAsset) -> dict:
+    return {
+        "id": asset.id,
+        "filename": asset.filename,
+        "mime_type": asset.mime_type,
+        "size_bytes": asset.size_bytes,
+        "processing_status": asset.processing_status,
+        "page_count": asset.page_count,
+    }
+
+
+async def get_active_conversation_file(
+    db: AsyncSession, user_id: str, conversation_id: str,
+) -> Optional[FileAsset]:
+    return await db.scalar(
+        select(FileAsset).where(
+            FileAsset.user_id == user_id,
+            FileAsset.conversation_id == conversation_id,
+            FileAsset.is_active.is_(True),
+        ).order_by(FileAsset.created_at.desc())
+    )
+
+
+async def persist_conversation_file(
+    db: AsyncSession,
+    user_id: str,
+    conversation_id: str,
+    data: bytes,
+    filename: str,
+    mime_type: Optional[str] = None,
+) -> FileAsset:
+    extension = os.path.splitext(filename.lower())[1]
+    directory = Path(settings.UPLOAD_DIR) / "chat" / user_id / conversation_id
+    directory.mkdir(parents=True, exist_ok=True)
+    stored_path = directory / f"{uuid.uuid4()}{extension}"
+    async with aiofiles.open(stored_path, "wb") as output:
+        await output.write(data)
+
+    extracted_text, processing_status = extract_material_text(data, extension)
+    page_count = extracted_text.count("[Page ") if extension == ".pdf" else None
+    await db.execute(update(FileAsset).where(
+        FileAsset.user_id == user_id,
+        FileAsset.conversation_id == conversation_id,
+        FileAsset.is_active.is_(True),
+    ).values(is_active=False))
+    asset = FileAsset(
+        user_id=user_id,
+        conversation_id=conversation_id,
+        filename=filename[:255],
+        mime_type=mime_type,
+        size_bytes=len(data),
+        stored_path=str(stored_path),
+        extracted_text=extracted_text,
+        page_count=page_count,
+        is_active=True,
+        processing_status=processing_status,
+    )
+    db.add(asset)
+    await db.flush()
+    await db.refresh(asset)
+    return asset
+
+
+def delete_stored_file(asset: FileAsset) -> None:
+    if not asset.stored_path:
+        return
+    upload_root = Path(settings.UPLOAD_DIR).resolve()
+    file_path = Path(asset.stored_path).resolve()
+    if upload_root in file_path.parents and file_path.is_file():
+        file_path.unlink()
+
+
+async def remove_active_conversation_file(
+    db: AsyncSession, user_id: str, conversation_id: str,
+) -> bool:
+    asset = await get_active_conversation_file(db, user_id, conversation_id)
+    if not asset:
+        return False
+    delete_stored_file(asset)
+    await db.delete(asset)
+    await db.flush()
+    return True
 
 
 async def get_or_create_conversation(
@@ -97,6 +187,8 @@ async def process_chat(
     chapter_id: Optional[str] = None,
     file_data: Optional[bytes] = None,
     filename: Optional[str] = None,
+    mime_type: Optional[str] = None,
+    guided_mode: bool = False,
 ) -> dict:
     if course_id and not await student_can_use_course(db, user_id, course_id):
         raise ValueError("You are not enrolled in this course")
@@ -126,6 +218,13 @@ async def process_chat(
     conv = await get_or_create_conversation(
         db, user_id, conversation_id, course_id, chapter_index, chapter_id,
     )
+    active_file = None
+    if file_data is not None and filename:
+        active_file = await persist_conversation_file(
+            db, user_id, conv.id, file_data, filename, mime_type,
+        )
+    else:
+        active_file = await get_active_conversation_file(db, user_id, conv.id)
 
     # Build conversation mode string for knowledge base lookup
     mode = "chatbot"
@@ -161,6 +260,10 @@ async def process_chat(
         conversation_history=history,
         reference_context=reference_context or None,
         reference_name=reference_name or None,
+        persisted_file_context=active_file.extracted_text if active_file and file_data is None else None,
+        persisted_filename=active_file.filename if active_file and file_data is None else None,
+        persisted_page_count=active_file.page_count if active_file and file_data is None else None,
+        guided_mode=guided_mode,
     )
 
     # Save AI response
@@ -172,12 +275,18 @@ async def process_chat(
     await conversation_memory.add_message(conv.id, "assistant", ai_result["response"])
 
     # Log usage
-    await log_usage(db, user_id, "chat_message", {"conversation_id": conv.id, "course_id": course_id}, course_id=course_id)
+    await log_usage(db, user_id, "chat_message", {
+        "conversation_id": conv.id,
+        "course_id": course_id,
+        "guided_mode": guided_mode,
+    }, course_id=course_id)
 
     return {
         "message_id": ai_msg.id,
         "conversation_id": conv.id,
         "response": ai_result["response"],
+        "active_file": serialize_file_asset(active_file) if active_file else None,
+        "guided_question": ai_result.get("guided_question"),
     }
 
 

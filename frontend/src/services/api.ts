@@ -15,6 +15,7 @@ function localizeError(detail: unknown): string {
     'Account is deactivated': '账号已停用',
     'Invalid or expired SMS code': '验证码错误或已过期',
     'Failed to send SMS': '验证码发送失败',
+    'Please wait before requesting another code': '请稍后再获取新的校验码',
     'Student ID or phone already registered': '学号或手机号已注册',
     'Invalid or expired token': '登录已过期，请重新登录',
     'Insufficient permissions': '权限不足',
@@ -37,6 +38,7 @@ function localizeError(detail: unknown): string {
     'File is too large': '文件过大',
     'Unsupported file type': '不支持该文件格式',
     'Conversation not found': '会话不存在',
+    'Conversation file not found': '会话附件不存在',
     'Submission attachment not found': '附件不存在',
     'Message permission denied': '老师暂未接受该学生的消息',
     'Thread not found': '对话不存在',
@@ -163,6 +165,12 @@ class ApiClient {
     return this.request<{ message: string }>('/auth/send-sms', { method: 'POST', body: { phone } });
   }
 
+  getRegistrationCode(phone: string) {
+    return this.request<{ message: string; phone: string; code: string; expires_in: number }>('/auth/registration-code', {
+      method: 'POST', body: { phone },
+    });
+  }
+
   logout(refreshToken: string) {
     return this.request<{ message: string }>('/auth/logout', { method: 'POST', body: { refresh_token: refreshToken } });
   }
@@ -173,7 +181,13 @@ class ApiClient {
 
   // Chat
   sendMessage(formData: FormData) {
-    return this.request<{ message_id: string; conversation_id: string; response: string }>('/chat/send', {
+    return this.request<{
+      message_id: string;
+      conversation_id: string;
+      response: string;
+      active_file: { id: string; filename: string; mime_type?: string; size_bytes: number; processing_status: string; page_count?: number } | null;
+      guided_question: { question: string; options: string[] } | null;
+    }>('/chat/send', {
       method: 'POST', body: formData,
     });
   }
@@ -184,6 +198,16 @@ class ApiClient {
 
   getMessages(conversationId: string, page = 1) {
     return this.request<any>(`/chat/conversations/${conversationId}/messages?page=${page}`);
+  }
+
+  getConversationFile(conversationId: string) {
+    return this.request<{ file: { id: string; filename: string; mime_type?: string; size_bytes: number; processing_status: string; page_count?: number } | null }>(
+      `/chat/conversations/${conversationId}/active-file`,
+    );
+  }
+
+  removeConversationFile(conversationId: string) {
+    return this.request<{ message: string }>(`/chat/conversations/${conversationId}/active-file`, { method: 'DELETE' });
   }
 
   // Teacher

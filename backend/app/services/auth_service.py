@@ -20,7 +20,7 @@ async def register_user(
     sms_code: str,
     display_name: str = "",
 ) -> dict:
-    # Verify SMS
+    # Verify the one-time registration code. It may come from SMS or the on-page flow.
     if not await verify_sms(phone, sms_code):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired SMS code")
 

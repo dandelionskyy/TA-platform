@@ -39,6 +39,64 @@
   border-bottom-left-radius: 4px;
 }
 
+.message.bot .content > :first-child { margin-top: 0; }
+.message.bot .content > :last-child { margin-bottom: 0; }
+.message.bot .content p { margin: 0 0 0.85em; }
+.message.bot .content h1,
+.message.bot .content h2,
+.message.bot .content h3,
+.message.bot .content h4 {
+  margin: 1.25em 0 0.55em;
+  line-height: 1.35;
+  font-weight: 650;
+}
+.message.bot .content h1 { font-size: 1.3em; }
+.message.bot .content h2 { font-size: 1.18em; }
+.message.bot .content h3,
+.message.bot .content h4 { font-size: 1.06em; }
+.message.bot .content ul,
+.message.bot .content ol {
+  margin: 0.5em 0 1em;
+  padding-left: 1.5em;
+}
+.message.bot .content ul { list-style: disc; }
+.message.bot .content ol { list-style: decimal; }
+.message.bot .content li { margin: 0.35em 0; padding-left: 0.15em; }
+.message.bot .content li > p { margin-bottom: 0.4em; }
+.message.bot .content strong { font-weight: 650; color: var(--text-primary); }
+.message.bot .content blockquote {
+  margin: 0.8em 0;
+  border-left: 3px solid var(--accent-color);
+  padding: 0.15em 0 0.15em 0.9em;
+  color: var(--text-secondary);
+}
+.message.bot .content hr { margin: 1.1em 0; border-color: var(--border-color); }
+.message.bot .content code:not(pre code) {
+  border-radius: 4px;
+  background: var(--bg-secondary);
+  padding: 0.12em 0.35em;
+  font-size: 0.92em;
+}
+.message.bot .content .katex-display {
+  margin: 1em 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 0.2em 0;
+}
+.message.bot .content table {
+  display: block;
+  max-width: 100%;
+  margin: 0.8em 0 1em;
+  overflow-x: auto;
+  border-collapse: collapse;
+}
+.message.bot .content th,
+.message.bot .content td {
+  border: 1px solid var(--border-color);
+  padding: 0.5em 0.7em;
+  text-align: left;
+}
+
 .bot-avatar {
   width: 32px; height: 32px;
   border-radius: 50%;

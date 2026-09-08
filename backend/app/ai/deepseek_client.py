@@ -1,6 +1,7 @@
 # Ported and enhanced from the original AI Chatbot (g:\Desktop\Uni\2025启航计划\AI Chatbot\deepseek_client.py)
 import base64
 import io
+import json
 import os
 import re
 from datetime import datetime
@@ -79,27 +80,80 @@ def cache_pdf_pages(course_name: str, chapter_index: int, pages: List[str]):
     }
 
 
+_PAGE_NUMBER_TOKEN = r"[0-9\u96f6\u3007\u4e00\u4e8c\u4e24\u4e09\u56db\u4e94\u516d\u4e03\u516b\u4e5d\u5341\u767e\u5343]+"
+_CHINESE_DIGITS = {
+    "\u96f6": 0, "\u3007": 0, "\u4e00": 1, "\u4e8c": 2, "\u4e24": 2,
+    "\u4e09": 3, "\u56db": 4, "\u4e94": 5, "\u516d": 6, "\u4e03": 7,
+    "\u516b": 8, "\u4e5d": 9,
+}
+_CHINESE_UNITS = {"\u5341": 10, "\u767e": 100, "\u5343": 1000}
+
+
+def _parse_page_number(value: str) -> Optional[int]:
+    value = value.strip()
+    if value.isdigit():
+        return int(value)
+    if not value or any(char not in _CHINESE_DIGITS and char not in _CHINESE_UNITS for char in value):
+        return None
+    if not any(char in _CHINESE_UNITS for char in value):
+        return int("".join(str(_CHINESE_DIGITS[char]) for char in value))
+
+    total = 0
+    current = 0
+    for char in value:
+        if char in _CHINESE_DIGITS:
+            current = _CHINESE_DIGITS[char]
+        else:
+            total += (current or 1) * _CHINESE_UNITS[char]
+            current = 0
+    return total + current
+
+
 def extract_page_numbers(question: str) -> List[int]:
-    page_numbers = []
-    chinese_patterns = [
-        r'第(\d+)页',
-        r'第(\d+)\s*[-~到]\s*(\d+)页',
+    page_numbers: set[int] = set()
+    range_patterns = [
+        rf"(?:\u7b2c\s*)?({_PAGE_NUMBER_TOKEN})\s*(?:-|~|\u81f3|\u5230)\s*(?:\u7b2c\s*)?({_PAGE_NUMBER_TOKEN})\s*\u9875",
+        r"pages?\s*(\d+)\s*(?:-|~|to)\s*(\d+)",
     ]
-    english_patterns = [
-        r'page\s*(\d+)',
-        r'pages?\s*(\d+)\s*[-~to]+\s*(\d+)',
+    single_patterns = [
+        rf"(?:\u7b2c\s*)?({_PAGE_NUMBER_TOKEN})\s*\u9875",
+        r"page\s*(\d+)",
     ]
-    for pattern in chinese_patterns + english_patterns:
-        matches = re.finditer(pattern, question, re.IGNORECASE)
-        for match in matches:
-            groups = match.groups()
-            if len(groups) >= 1:
-                page_numbers.append(int(groups[0]))
-            if len(groups) >= 2 and groups[1] is not None:
-                start = int(groups[0])
-                end = int(groups[1])
-                page_numbers.extend(range(start, end + 1))
-    return sorted(set(page_numbers))
+
+    for pattern in range_patterns:
+        for match in re.finditer(pattern, question, re.IGNORECASE):
+            start = _parse_page_number(match.group(1))
+            end = _parse_page_number(match.group(2))
+            if start is not None and end is not None and 0 < start <= end and end - start <= 50:
+                page_numbers.update(range(start, end + 1))
+    for pattern in single_patterns:
+        for match in re.finditer(pattern, question, re.IGNORECASE):
+            page_number = _parse_page_number(match.group(1))
+            if page_number and page_number > 0:
+                page_numbers.add(page_number)
+    return sorted(page_numbers)
+
+
+def _format_pdf_page(page_number: int, content: str) -> str:
+    content = content.strip()
+    if not content:
+        content = "[No extractable text was found on this page. It may be scanned or image-only.]"
+    return f"[Page {page_number}]\n{content}"
+
+
+def extract_pages_from_marked_text(text: str, page_count: Optional[int] = None) -> List[str]:
+    marker = re.compile(r"(?m)^\[Page\s+(\d+)\]\s*$")
+    matches = list(marker.finditer(text or ""))
+    if not matches:
+        return [text] if text else ([""] * page_count if page_count else [])
+    total_pages = page_count or max(int(match.group(1)) for match in matches)
+    pages = [""] * total_pages
+    for index, match in enumerate(matches):
+        page_number = int(match.group(1))
+        end = matches[index + 1].start() if index + 1 < len(matches) else len(text)
+        if 1 <= page_number <= total_pages:
+            pages[page_number - 1] = text[match.end():end].strip()
+    return pages
 
 
 def select_relevant_pages(question: str, all_pages: List[str], include_page_numbers: bool = True) -> str:
@@ -108,12 +162,14 @@ def select_relevant_pages(question: str, all_pages: List[str], include_page_numb
         selected_pages = []
         for page_num in page_numbers:
             if 1 <= page_num <= len(all_pages):
-                if include_page_numbers:
-                    selected_pages.append(f"[Page {page_num}]\n{all_pages[page_num - 1]}")
-                else:
-                    selected_pages.append(all_pages[page_num - 1])
+                selected_pages.append(
+                    _format_pdf_page(page_num, all_pages[page_num - 1])
+                    if include_page_numbers else all_pages[page_num - 1]
+                )
         if selected_pages:
             return "\n\n".join(selected_pages)
+        requested = ", ".join(str(page_number) for page_number in page_numbers)
+        return f"[Document metadata]\nThe PDF has {len(all_pages)} pages. Requested page(s): {requested}."
 
     important_keywords = [
         '概念', '定义', '公式', '定理', '原理', '性质', '特点', '特征',
@@ -131,7 +187,7 @@ def select_relevant_pages(question: str, all_pages: List[str], include_page_numb
         for keyword in important_keywords:
             if keyword.lower() in question.lower() and keyword.lower() in page_lower:
                 if include_page_numbers:
-                    relevant_pages.append(f"[Page {i+1}]\n{page_content}")
+                    relevant_pages.append(_format_pdf_page(i + 1, page_content))
                 else:
                     relevant_pages.append(page_content)
                 break
@@ -143,7 +199,7 @@ def select_relevant_pages(question: str, all_pages: List[str], include_page_numb
 
     default_pages = all_pages[:3]
     if include_page_numbers:
-        return "\n\n".join([f"[Page {i+1}]\n{content}" for i, content in enumerate(default_pages)])
+        return "\n\n".join(_format_pdf_page(i + 1, content) for i, content in enumerate(default_pages))
     return "\n\n".join(default_pages)
 
 
@@ -163,6 +219,98 @@ VOICE_SYSTEM_PROMPT = (
     "If the user asked in Chinese, reply in Chinese; if in English, reply in English."
 )
 
+RESPONSE_STYLE_PROMPT = (
+    "Format the answer as readable Markdown with short paragraphs separated by blank lines. "
+    "Use descriptive headings only when they improve scanning, and use lists for parallel points or steps. "
+    "Bold only key concepts, conclusions, and short labels; never bold an entire paragraph. "
+    "Write math only as valid LaTeX using $...$ or $$...$$. "
+    "Never output HTML tags, HTML entities, or escaped HTML. "
+    "Do not append follow-up questions, option menus, or next-step suggestions to the answer."
+)
+
+GUIDED_MODE_PROMPT = (
+    "Return only one valid JSON object with this exact shape: "
+    '{"answer_markdown":"the complete Markdown answer","guided_question":{"question":"one concrete question",'
+    '"options":["answer 1","answer 2","answer 3"]}}. '
+    "The guided question must use the user's language and test or advance the exact concept in answer_markdown. "
+    "Provide 2 to 4 concise, plausible choices. Never ask which learning direction the student wants, "
+    "never provide a generic explain/example/practice menu, and never repeat a question or choices from any earlier conversation message. "
+    "If the student is a beginner or says they do not understand, ask an easy concrete comprehension question. "
+    "If the student requests an exercise, ask the actual exercise now. Do not wrap the JSON in a code fence."
+)
+
+
+def parse_guided_response(content: str) -> tuple[str, Optional[Dict[str, object]]]:
+    cleaned_content = content.strip()
+    if cleaned_content.startswith("```"):
+        cleaned_content = re.sub(r"^```(?:json)?\s*", "", cleaned_content, flags=re.IGNORECASE)
+        cleaned_content = re.sub(r"\s*```$", "", cleaned_content)
+    try:
+        payload = json.loads(cleaned_content)
+    except (json.JSONDecodeError, TypeError):
+        payload = None
+    if isinstance(payload, dict) and isinstance(payload.get("answer_markdown"), str):
+        answer = payload["answer_markdown"].strip()
+        guide_payload = payload.get("guided_question")
+        if isinstance(guide_payload, dict):
+            guide = _normalize_guided_question(guide_payload)
+            return answer, guide
+        return answer, None
+
+    # Backward compatibility for responses generated by the earlier marker prompt.
+    start_marker = "<<<GUIDED_QUESTION>>>"
+    end_marker = "<<<END_GUIDED_QUESTION>>>"
+    pattern = re.compile(
+        rf"{re.escape(start_marker)}\s*(.*?)\s*{re.escape(end_marker)}",
+        re.DOTALL,
+    )
+    match = pattern.search(content)
+    if not match:
+        clean = content.split(start_marker, 1)[0].strip() if start_marker in content else content.strip()
+        return clean, None
+
+    clean = (content[:match.start()] + content[match.end():]).strip()
+    try:
+        payload = json.loads(match.group(1))
+    except (json.JSONDecodeError, TypeError):
+        return clean, None
+
+    return clean, _normalize_guided_question(payload)
+
+
+def _normalize_guided_question(payload: object) -> Optional[Dict[str, object]]:
+    question = payload.get("question") if isinstance(payload, dict) else None
+    raw_options = payload.get("options") if isinstance(payload, dict) else None
+    if not isinstance(question, str) or not isinstance(raw_options, list):
+        return None
+
+    question = question.strip()[:300]
+    options = []
+    for option in raw_options:
+        if isinstance(option, str) and option.strip():
+            value = option.strip()[:160]
+            if value not in options:
+                options.append(value)
+                if len(options) == 4:
+                    break
+    if not question or len(options) < 2:
+        return None
+    return {"question": question, "options": options}
+
+
+def fallback_guided_question(user_question: str) -> Optional[Dict[str, object]]:
+    if "\u6211\u7684\u9009\u62e9\uff1a" in user_question or "My choice:" in user_question:
+        return None
+    if re.search(r"[\u4e00-\u9fff]", user_question):
+        return {
+            "question": "接下来你想怎样继续学习这个内容？",
+            "options": ["进一步解释核心概念", "展示一个具体例子", "给我一道练习题"],
+        }
+    return {
+        "question": "How would you like to continue learning this topic?",
+        "options": ["Explain the core idea further", "Show a concrete example", "Give me a practice question"],
+    }
+
 
 # ==================== AI Response ====================
 
@@ -174,12 +322,16 @@ async def get_deepseek_response(
     conversation_history: Optional[List[Dict[str, str]]] = None,
     reference_context: Optional[str] = None,
     reference_name: Optional[str] = None,
+    persisted_file_context: Optional[str] = None,
+    persisted_filename: Optional[str] = None,
+    persisted_page_count: Optional[int] = None,
+    guided_mode: bool = False,
 ) -> Dict:
     """
     Returns dict with keys: response (str), context_source (str), filename_display (str)
     """
     if not settings.DEEPSEEK_API_KEY:
-        return {"response": "Error: DeepSeek API key is not configured.", "context_source": "none", "filename_display": ""}
+        return {"response": "Error: DeepSeek API key is not configured.", "context_source": "none", "filename_display": "", "guided_question": None}
 
     try:
         messages = []
@@ -212,6 +364,21 @@ async def get_deepseek_response(
                     return {"response": f"Unsupported file type: '{filename}'", "context_source": "none", "filename_display": ""}
                 context_source = "manual_file"
                 filename_display = filename
+
+        # --------- Conversation File ---------
+        elif persisted_filename and persisted_file_context is not None:
+            if persisted_filename.lower().endswith('.pdf'):
+                pages = extract_pages_from_marked_text(persisted_file_context, persisted_page_count)
+                file_context = select_relevant_pages(user_question, pages, include_page_numbers=True)
+            else:
+                file_context = persisted_file_context.strip()
+                if not file_context:
+                    file_context = (
+                        "[Document status]\nNo extractable text was found in this file. "
+                        "It may be scanned, image-only, or unsupported for text extraction."
+                    )
+            context_source = "manual_file"
+            filename_display = persisted_filename
 
         # --------- Managed Course Material ---------
         elif reference_context:
@@ -257,6 +424,7 @@ async def get_deepseek_response(
 
         # --------- Build System Prompt ---------
         if file_context:
+            file_context = file_context[:settings.MAX_CONTEXT_CHARS]
             page_query_hint = ""
             if extract_page_numbers(user_question):
                 page_query_hint = "\nThe user mentioned a page number. Use matching [Page X] context when available."
@@ -280,6 +448,12 @@ async def get_deepseek_response(
             else:
                 system_prompt = VOICE_SYSTEM_PROMPT
 
+        if not (mode == 'voice_chat' or mode.startswith('voice')):
+            system_prompt = system_prompt + "\n\n" + RESPONSE_STYLE_PROMPT
+
+        if guided_mode and not (mode == 'voice_chat' or mode.startswith('voice')):
+            system_prompt = system_prompt + "\n\n" + GUIDED_MODE_PROMPT
+
         # --------- Build Messages ---------
         if not messages:
             messages = [{"role": "system", "content": system_prompt}]
@@ -288,19 +462,24 @@ async def get_deepseek_response(
                     if msg.get("role") in ["user", "assistant"]:
                         messages.append({"role": msg["role"], "content": msg["content"]})
             messages.append({"role": "user", "content": combined_input})
+        elif messages:
+            messages.insert(0, {"role": "system", "content": system_prompt})
 
         # --------- Call API ---------
-        response = client.chat.completions.create(
-            model=model_name,
-            messages=messages,
-            stream=False,
-        )
-        ai_response = response.choices[0].message.content.strip()
+        request_options = {"model": model_name, "messages": messages, "stream": False}
+        if guided_mode and not (mode == 'voice_chat' or mode.startswith('voice')):
+            request_options["response_format"] = {"type": "json_object"}
+        response = client.chat.completions.create(**request_options)
+        raw_response = response.choices[0].message.content.strip()
+        ai_response, guided_question = parse_guided_response(raw_response) if guided_mode else (raw_response, None)
+        if guided_mode and guided_question is None:
+            guided_question = fallback_guided_question(user_question)
 
         return {
             "response": ai_response,
             "context_source": context_source,
             "filename_display": filename_display,
+            "guided_question": guided_question,
         }
 
     except Exception as e:
@@ -309,4 +488,5 @@ async def get_deepseek_response(
             "response": "The assistant is temporarily unavailable. Please try again in a moment.",
             "context_source": "none",
             "filename_display": "",
+            "guided_question": None,
         }
