@@ -1,3 +1,4 @@
+import asyncio
 import json
 import mimetypes
 import os
@@ -250,7 +251,7 @@ async def upload_material(
     stored_path = directory / f"{uuid.uuid4().hex}{extension}"
     async with aiofiles.open(stored_path, "wb") as target:
         await target.write(data)
-    extracted_text, processing_status = extract_material_text(data, extension)
+    extracted_text, processing_status = await asyncio.to_thread(extract_material_text, data, extension)
     material = CourseMaterial(
         course_id=chapter.course_id,
         chapter_id=chapter.id,
@@ -425,6 +426,28 @@ async def enroll_student(
     if not existing:
         db.add(Enrollment(course_id=course_id, student_id=student_id))
     return {"message": "Student enrolled"}
+
+
+@teacher_router.delete("/courses/{course_id}/students/{student_id}")
+async def remove_student_from_course(
+    course_id: str,
+    student_id: str,
+    current_user: User = Depends(RequireTeacher),
+    db: AsyncSession = Depends(get_db),
+):
+    owns = await db.scalar(select(exists().where(Course.id == course_id, Course.teacher_id == current_user.id)))
+    if not owns:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Course access denied")
+
+    enrollment = await db.scalar(select(Enrollment).where(
+        Enrollment.course_id == course_id,
+        Enrollment.student_id == student_id,
+    ))
+    if not enrollment:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Student is not enrolled in this course")
+
+    await db.delete(enrollment)
+    return {"message": "Student removed from course"}
 
 
 @teacher_router.post("/courses/{course_id}/tas")

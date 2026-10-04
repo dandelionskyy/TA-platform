@@ -6,6 +6,7 @@ from alembic import context
 from app.core.config import get_settings
 from app.core.database import Base
 import app.models.base  # noqa: F401 - register all mapped models
+import app.models.bridge  # noqa: F401 - register BRIDGE models for migrations
 
 config = context.config
 settings = get_settings()

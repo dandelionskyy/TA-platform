@@ -6,6 +6,11 @@ from app.models.usage_log import UsageLog, AuditLog, RefreshToken
 from app.models.file_asset import FileAsset
 from app.models.academic import Assignment, Submission, AttendanceSession, AttendanceRecord, Announcement
 from app.models.messaging import MessagePermission, DirectThread, DirectMessage
+from app.models.bridge import (
+    BridgeModulePack, BridgeMaterial, BridgeChunk, BridgeStaffSolution,
+    BridgeGlossaryTerm, BridgeTutorSession, BridgeLearningEvent, BridgeDailyAggregate,
+    BridgeConcept, BridgeTemplate, BridgeRegressionPrompt,
+)
 
 __all__ = [
     "User",
@@ -30,4 +35,15 @@ __all__ = [
     "MessagePermission",
     "DirectThread",
     "DirectMessage",
+    "BridgeModulePack",
+    "BridgeMaterial",
+    "BridgeChunk",
+    "BridgeStaffSolution",
+    "BridgeGlossaryTerm",
+    "BridgeTutorSession",
+    "BridgeLearningEvent",
+    "BridgeDailyAggregate",
+    "BridgeConcept",
+    "BridgeTemplate",
+    "BridgeRegressionPrompt",
 ]

@@ -93,6 +93,23 @@ export default function CourseMemberManager({ courses }: CourseMemberManagerProp
     }
   };
 
+  const removeStudent = async (student: Student) => {
+    if (!courseId) return;
+    const name = student.display_name || student.student_id;
+    if (!window.confirm(text(`确定将“${name}”移出本课程吗？学生账号和其他课程不会受到影响。`, `Remove “${name}” from this course? Their account and other courses will not be affected.`))) return;
+
+    setLoading(true);
+    try {
+      await api.removeStudentFromCourse(courseId, student.id);
+      setMessage(text(`已将 ${name} 移出本课程。`, `${name} was removed from this course.`));
+      await loadMembers(search);
+    } catch (error: any) {
+      setMessage(error.message || text('移除学生失败。', 'Unable to remove the student.'));
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <section className="panel p-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -159,9 +176,14 @@ export default function CourseMemberManager({ courses }: CourseMemberManagerProp
             <h3 className="font-medium">{text('当前课程学生', 'Current course students')}</h3>
           </div>
           <div className="max-h-80 divide-y divide-[var(--border-color)] overflow-y-auto">
-            {enrolled.map(student => <div key={student.id} className="px-4 py-3">
-              <div className="truncate text-sm font-medium">{student.display_name || student.student_id}</div>
-              <div className="mt-1 truncate text-xs muted">{student.student_id} · {student.phone}</div>
+            {enrolled.map(student => <div key={student.id} className="flex items-center gap-3 px-4 py-3">
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-sm font-medium">{student.display_name || student.student_id}</div>
+                <div className="mt-1 truncate text-xs muted">{student.student_id} · {student.phone}</div>
+              </div>
+              <button type="button" className="btn px-2.5 py-1.5 text-xs" onClick={() => removeStudent(student)} disabled={loading}>
+                {text('移除', 'Remove')}
+              </button>
             </div>)}
             {enrolled.length === 0 && <p className="px-4 py-10 text-center text-sm muted">{text('暂时没有学生。', 'No students enrolled yet.')}</p>}
           </div>

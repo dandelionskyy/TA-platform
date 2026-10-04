@@ -20,6 +20,13 @@ interface AuthState {
   checkAuth: () => Promise<void>;
 }
 
+// An anonymous BRIDGE token must not survive an account change on a shared browser.
+function clearBridgeSessions() {
+  for (const key of Object.keys(localStorage)) {
+    if (key.startsWith('bridge-session:')) localStorage.removeItem(key);
+  }
+}
+
 export const useAuthStore = create<AuthState>((set) => ({
   user: null,
   isAuthenticated: !!localStorage.getItem('access_token'),
@@ -27,6 +34,7 @@ export const useAuthStore = create<AuthState>((set) => ({
 
   login: async (login: string, password: string) => {
     const result = await api.login(login, password);
+    clearBridgeSessions();
     localStorage.setItem('access_token', result.tokens.access_token);
     localStorage.setItem('refresh_token', result.tokens.refresh_token);
     const theme = localStorage.getItem('theme');
@@ -36,12 +44,14 @@ export const useAuthStore = create<AuthState>((set) => ({
 
   register: async (data) => {
     const result = await api.register(data);
+    clearBridgeSessions();
     localStorage.setItem('access_token', result.tokens.access_token);
     localStorage.setItem('refresh_token', result.tokens.refresh_token);
     set({ user: result.user, isAuthenticated: true });
   },
 
   logout: () => {
+    clearBridgeSessions();
     localStorage.removeItem('access_token');
     localStorage.removeItem('refresh_token');
     set({ user: null, isAuthenticated: false });
@@ -52,6 +62,7 @@ export const useAuthStore = create<AuthState>((set) => ({
       const user = await api.getMe();
       set({ user, isAuthenticated: true });
     } catch {
+      clearBridgeSessions();
       localStorage.removeItem('access_token');
       localStorage.removeItem('refresh_token');
       set({ user: null, isAuthenticated: false });

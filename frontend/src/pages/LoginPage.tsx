@@ -43,6 +43,7 @@ export default function LoginPage() {
           <button className="btn btn-primary w-full" type="submit" disabled={loading}>{loading ? text('登录中...', 'Signing in...') : text('登录', 'Sign in')}</button>
         </form>
         <p className="mt-6 text-center text-sm muted">{text('还没有学生账号？', 'New student?')} <Link className="text-[var(--accent-color)] hover:underline" to="/register">{text('注册账号', 'Create an account')}</Link></p>
+        <p className="mt-3 text-center text-sm muted"><Link className="text-[var(--accent-color)] hover:underline" to="/bridge">{text('以匿名会话使用 BRIDGE 学习助手', 'Use the BRIDGE tutor with an anonymous session')}</Link></p>
       </section>
     </main>
   );

@@ -11,6 +11,8 @@ import { StudentAttendancePage, StaffAttendancePage } from './pages/AttendancePa
 import AnnouncementsPage from './pages/AnnouncementsPage';
 import MessagingPage from './pages/MessagingPage';
 import CourseMaterialsPage from './pages/CourseMaterialsPage';
+import BridgeStudentPage from './pages/BridgeStudentPage';
+import BridgeStaffPage from './pages/BridgeStaffPage';
 
 function ProtectedRoute({ children, roles }: { children: React.ReactNode; roles?: string[] }) {
   const { user, isAuthenticated } = useAuthStore();
@@ -39,6 +41,7 @@ export default function App() {
     <Routes>
       <Route path="/login" element={<LoginPage />} />
       <Route path="/register" element={<RegisterPage />} />
+      <Route path="/bridge" element={<BridgeStudentPage />} />
       <Route path="/student" element={<ProtectedRoute roles={['student']}><StudentPage /></ProtectedRoute>} />
       <Route path="/student/chat" element={<ProtectedRoute roles={['student']}><StudentPage /></ProtectedRoute>} />
       <Route path="/student/assignments" element={<ProtectedRoute roles={['student']}><StudentAssignmentsPage /></ProtectedRoute>} />
@@ -51,6 +54,7 @@ export default function App() {
       <Route path="/teacher/announcements" element={<ProtectedRoute roles={['teacher']}><AnnouncementsPage role="teacher" /></ProtectedRoute>} />
       <Route path="/teacher/messages" element={<ProtectedRoute roles={['teacher']}><MessagingPage role="teacher" /></ProtectedRoute>} />
       <Route path="/teacher/materials" element={<ProtectedRoute roles={['teacher']}><CourseMaterialsPage role="teacher" /></ProtectedRoute>} />
+      <Route path="/teacher/bridge" element={<ProtectedRoute roles={['teacher']}><BridgeStaffPage /></ProtectedRoute>} />
       <Route path="/ta" element={<ProtectedRoute roles={['ta']}><TAPage /></ProtectedRoute>} />
       <Route path="/ta/assignments" element={<ProtectedRoute roles={['ta']}><StaffAssignmentsPage role="ta" /></ProtectedRoute>} />
       <Route path="/ta/attendance" element={<ProtectedRoute roles={['ta']}><StaffAttendancePage role="ta" /></ProtectedRoute>} />

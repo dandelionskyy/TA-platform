@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -14,10 +14,10 @@ from app.schemas.auth import (
     RefreshRequest,
 )
 from app.services.auth_service import register_user, login_user, refresh_access_token, revoke_refresh_token
-from app.services.sms_service import issue_registration_code, send_sms
+from app.services.sms_service import SmsCooldownError, SmsRateStoreUnavailableError, send_sms
 from app.core.dependencies import RequireTeacher
 from app.core.security import hash_password
-from app.services.audit_service import write_audit
+from app.core.config import get_settings
 
 
 class ProvisionUserRequest(BaseModel):
@@ -67,41 +67,38 @@ async def logout(
 
 @router.post("/send-sms")
 async def send_sms_code(req: SendSmsRequest):
-    ok = await send_sms(req.phone)
+    settings = get_settings()
+    # The SMS service has a development fallback that prints the code. Never
+    # allow that fallback through this public endpoint.
+    if not all((
+        settings.ALIBABA_SMS_ACCESS_KEY,
+        settings.ALIBABA_SMS_SECRET,
+        settings.ALIBABA_SMS_SIGN_NAME,
+        settings.ALIBABA_SMS_TEMPLATE_CODE,
+    )):
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="SMS verification is unavailable")
+    try:
+        ok = await send_sms(req.phone)
+    except SmsCooldownError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Wait before requesting another SMS code",
+            headers={"Retry-After": "60"},
+        ) from exc
+    except SmsRateStoreUnavailableError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="SMS verification is temporarily unavailable",
+        ) from exc
     if not ok:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to send SMS")
     return {"message": "SMS code sent", "phone": req.phone}
 
 
 @router.post("/registration-code")
-async def create_registration_code(
-    req: SendSmsRequest,
-    request: Request,
-    response: Response,
-    db: AsyncSession = Depends(get_db),
-):
-    code = await issue_registration_code(req.phone)
-    if code is None:
-        raise HTTPException(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail="Please wait before requesting another code",
-        )
-    forwarded_for = request.headers.get("x-forwarded-for", "").split(",")[0].strip()
-    await write_audit(
-        db,
-        "registration_code_issued",
-        target_type="phone_suffix",
-        target_id=req.phone[-4:],
-        ip_address=forwarded_for or (request.client.host if request.client else None),
-        metadata={"delivery": "on_page"},
-    )
-    response.headers["Cache-Control"] = "no-store"
-    return {
-        "message": "Registration code created",
-        "phone": req.phone,
-        "code": code,
-        "expires_in": 300,
-    }
+async def create_registration_code():
+    """Retired: returning an OTP to the requesting browser defeats verification."""
+    raise HTTPException(status_code=status.HTTP_410_GONE, detail="On-page registration codes are disabled")
 
 
 @router.get("/me")

@@ -1,9 +1,38 @@
 events { worker_connections 1024; }
 http {
   include /etc/nginx/mime.types;
-  client_max_body_size 10m;
+  # BRIDGE accepts source files up to 50 MiB plus multipart overhead.
+  client_max_body_size 51m;
+  # Empty keys keep CORS preflight out of the POST-only budgets.
+  # Use the connection IP; only configure real_ip for a trusted proxy.
+  map $request_method $bridge_session_post_key {
+    default "";
+    POST $binary_remote_addr;
+  }
+  map $request_method $bridge_tutor_post_key {
+    default "";
+    POST $binary_remote_addr;
+  }
+  map $request_method $bridge_tutor_connection_key {
+    default "";
+    POST bridge-tutor;
+  }
+  map $request_method $sms_post_key {
+    default "";
+    POST $binary_remote_addr;
+  }
+  # Size for a classroom behind one campus NAT; match the tutor rate to
+  # measured model capacity before increasing external traffic.
   limit_req_zone $binary_remote_addr zone=api_limit:10m rate=30r/s;
-  limit_req_zone $binary_remote_addr zone=sms_limit:10m rate=1r/m;
+  limit_req_zone $bridge_session_post_key zone=bridge_session_limit:10m rate=10r/s;
+  limit_req_zone $bridge_tutor_post_key zone=bridge_tutor_limit:10m rate=10r/s;
+  limit_req_zone $sms_post_key zone=sms_limit:10m rate=5r/m;
+  limit_req_status 429;
+  # Shared in-flight tutor cap across all IPs/backend workers on this nginx
+  # instance; OPTIONS has an empty key. Size 8 to measured local-model capacity
+  # and adjust each nginx replica if running more than one.
+  limit_conn_zone $bridge_tutor_connection_key zone=bridge_tutor_concurrency:10m;
+  limit_conn_status 429;
 
   server {
     listen 80;
@@ -29,6 +58,41 @@ http {
       proxy_set_header X-Forwarded-Proto https;
       proxy_set_header Authorization $http_authorization;
       proxy_read_timeout 120s;
+      proxy_connect_timeout 10s;
+    }
+    location = /api/bridge/sessions {
+      limit_req zone=bridge_session_limit burst=100 nodelay;
+      proxy_pass http://backend:8000;
+      proxy_set_header Host $host;
+      proxy_set_header X-Real-IP $remote_addr;
+      proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+      proxy_set_header X-Forwarded-Proto https;
+      proxy_set_header Authorization $http_authorization;
+      proxy_read_timeout 120s;
+      proxy_connect_timeout 10s;
+    }
+    location = /api/bridge/tutor {
+      limit_req zone=bridge_tutor_limit burst=50 nodelay;
+      limit_conn bridge_tutor_concurrency 8;
+      proxy_pass http://backend:8000;
+      proxy_set_header Host $host;
+      proxy_set_header X-Real-IP $remote_addr;
+      proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+      proxy_set_header X-Forwarded-Proto https;
+      proxy_set_header Authorization $http_authorization;
+      proxy_read_timeout 120s;
+      proxy_connect_timeout 10s;
+    }
+    location = /api/auth/send-sms {
+      limit_req zone=sms_limit burst=5 nodelay;
+      proxy_pass http://backend:8000;
+      proxy_set_header Host $host;
+      proxy_set_header X-Real-IP $remote_addr;
+      proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+      proxy_set_header X-Forwarded-Proto https;
+      proxy_set_header Authorization $http_authorization;
+      proxy_read_timeout 120s;
+      proxy_connect_timeout 10s;
     }
     location /ws/ {
       proxy_pass http://backend:8000;

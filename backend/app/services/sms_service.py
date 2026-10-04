@@ -15,6 +15,14 @@ _sms_store: dict[str, dict] = {}
 _redis = None
 
 
+class SmsCooldownError(Exception):
+    """A verification code was requested for this phone too recently."""
+
+
+class SmsRateStoreUnavailableError(Exception):
+    """A shared rate limit store is required before sending a public SMS."""
+
+
 async def _get_redis():
     global _redis
     if _redis is not None or not settings.USE_REDIS:
@@ -33,9 +41,13 @@ def generate_code() -> str:
     return f"{secrets.randbelow(1_000_000):06d}"
 
 
-async def issue_registration_code(phone: str) -> str | None:
-    """Create a short-lived code that the registration page may display directly."""
+async def issue_registration_code(phone: str, *, require_redis: bool = False) -> str | None:
+    """Create a short-lived code for delivery through the configured SMS service."""
     redis = await _get_redis()
+    if require_redis and redis is None:
+        # The local demo can issue codes without Redis, but an external SMS
+        # delivery must use a cooldown shared by all application workers.
+        raise SmsRateStoreUnavailableError
     code = generate_code()
     now = datetime.now(timezone.utc)
     record = {
@@ -47,9 +59,14 @@ async def issue_registration_code(phone: str) -> str | None:
 
     if redis:
         rate_key = f"sms:rate:{phone}"
-        if not await redis.set(rate_key, "1", ex=60, nx=True):
-            return None
-        await redis.set(f"sms:code:{phone}", json.dumps(record), ex=300)
+        try:
+            if not await redis.set(rate_key, "1", ex=60, nx=True):
+                return None
+            await redis.set(f"sms:code:{phone}", json.dumps(record), ex=300)
+        except Exception as exc:
+            # Redis may disconnect after _get_redis succeeds. Never fall back
+            # to a per-worker store for a public, billable SMS request.
+            raise SmsRateStoreUnavailableError from exc
     else:
         existing = _sms_store.get(phone)
         sent_at = existing.get("sent_at") if existing else None
@@ -66,40 +83,39 @@ async def issue_registration_code(phone: str) -> str | None:
 async def send_sms(phone: str) -> bool:
     """
     Send SMS verification code via Alibaba Cloud Dysmsapi.
-    Falls back to logging the code if API keys are not configured.
+    Fail closed when no delivery service is configured.
     """
-    code = await issue_registration_code(phone)
-    if code is None:
+    if not all((settings.ALIBABA_SMS_ACCESS_KEY, settings.ALIBABA_SMS_SECRET,
+                settings.ALIBABA_SMS_SIGN_NAME, settings.ALIBABA_SMS_TEMPLATE_CODE)):
         return False
+    code = await issue_registration_code(phone, require_redis=True)
+    if code is None:
+        raise SmsCooldownError
 
-    if settings.ALIBABA_SMS_ACCESS_KEY and settings.ALIBABA_SMS_SECRET and settings.ALIBABA_SMS_SIGN_NAME and settings.ALIBABA_SMS_TEMPLATE_CODE:
-        try:
-            import asyncio
-            import json as json_module
-            from alibabacloud_tea_openapi import models as open_api_models
-            from alibabacloud_dysmsapi20170525.client import Client
-            from alibabacloud_dysmsapi20170525 import models as sms_models
-            config = open_api_models.Config(
-                access_key_id=settings.ALIBABA_SMS_ACCESS_KEY,
-                access_key_secret=settings.ALIBABA_SMS_SECRET,
-                endpoint="dysmsapi.aliyuncs.com",
-            )
-            client = Client(config)
-            request = sms_models.SendSmsRequest(
-                phone_numbers=phone,
-                sign_name=settings.ALIBABA_SMS_SIGN_NAME,
-                template_code=settings.ALIBABA_SMS_TEMPLATE_CODE,
-                template_param=json_module.dumps({"code": code}),
-            )
-            response = await asyncio.to_thread(client.send_sms, request)
-            if getattr(response.body, "code", "OK") != "OK":
-                return False
-        except Exception as exc:
-            logger.error("Alibaba SMS request failed: %s", exc)
+    try:
+        import asyncio
+        import json as json_module
+        from alibabacloud_tea_openapi import models as open_api_models
+        from alibabacloud_dysmsapi20170525.client import Client
+        from alibabacloud_dysmsapi20170525 import models as sms_models
+        config = open_api_models.Config(
+            access_key_id=settings.ALIBABA_SMS_ACCESS_KEY,
+            access_key_secret=settings.ALIBABA_SMS_SECRET,
+            endpoint="dysmsapi.aliyuncs.com",
+        )
+        client = Client(config)
+        request = sms_models.SendSmsRequest(
+            phone_numbers=phone,
+            sign_name=settings.ALIBABA_SMS_SIGN_NAME,
+            template_code=settings.ALIBABA_SMS_TEMPLATE_CODE,
+            template_param=json_module.dumps({"code": code}),
+        )
+        response = await asyncio.to_thread(client.send_sms, request)
+        if getattr(response.body, "code", "OK") != "OK":
             return False
-    else:
-        msg = f"\n{'='*50}\n>>> DEV VERIFICATION CODE for {phone}: {code} <<<\n{'='*50}\n"
-        print(msg, flush=True)
+    except Exception as exc:
+        logger.error("Alibaba SMS request failed: %s", exc)
+        return False
 
     return True
 

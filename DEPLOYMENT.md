@@ -1,10 +1,12 @@
 # TA Platform deployment
 
+For the BRIDGE web tutor and teacher panel, read `BRIDGE_HANDOVER.md` before deploying. The source archive includes a compiled `frontend/dist` so the supplied Nginx configuration can serve the new pages. Set the required BRIDGE model service endpoints in `.env` and review source chunks before activating a module.
+
 ## Local smoke test
 
 ```powershell
 Copy-Item .env.example .env
-# Set DEEPSEEK_API_KEY and a random JWT_SECRET in .env.
+# Set DB_PASSWORD, JWT_SECRET and ROBOT_AUTH_KEYS. Set BRIDGE model URLs and model names for BRIDGE.
 docker compose up -d --build
 docker compose ps
 ```
@@ -24,8 +26,9 @@ docker compose exec backend python -m app.create_teacher \
    expose only 80 and 443 publicly.
 2. Install Docker and Git, clone this repository under `/opt/ta-platform`, and
    create `.env` from `.env.example`.
-3. Set a strong `DB_PASSWORD`, `JWT_SECRET`, `ROBOT_AUTH_KEYS`, the DeepSeek
-   key, and Alibaba SMS/speech credentials. Never commit `.env`.
+3. Set a strong `DB_PASSWORD`, `JWT_SECRET`, `ROBOT_AUTH_KEYS`; configure the
+   BRIDGE internal model endpoints and only the legacy services you use.
+   Never commit `.env`.
 4. Point an A record for the domain to the ECS public IP and set
    `CORS_ORIGINS=https://your-domain.example`.
 5. Run `docker compose up -d --build`. Nginx proxies `/api` and `/ws` to the

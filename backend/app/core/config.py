@@ -58,6 +58,17 @@ class Settings(BaseSettings):
     MAX_CONTEXT_CHARS: int = 24000
     SEED_DEMO_DATA: bool = False
 
+    # BRIDGE uses institution-controlled model endpoints. Blank URLs disable
+    # generation/indexing rather than silently sending student text elsewhere.
+    BRIDGE_LLM_URL: str = ""
+    BRIDGE_LLM_MODEL: str = ""
+    BRIDGE_EMBEDDINGS_URL: str = ""
+    BRIDGE_EMBEDDINGS_MODEL: str = "bge-m3"
+    BRIDGE_ALLOW_LEXICAL_PROTOTYPE: bool = False
+    BRIDGE_MIN_SIMILARITY: float = 0.65
+    BRIDGE_UPLOAD_MAX_MB: int = 50
+    BRIDGE_SESSION_DAYS: int = 30
+
     @field_validator("DEBUG", mode="before")
     @classmethod
     def parse_debug(cls, value):

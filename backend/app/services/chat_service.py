@@ -113,13 +113,16 @@ async def get_or_create_conversation(
             select(Conversation).where(Conversation.id == conversation_id, Conversation.user_id == user_id)
         )
         conv = result.scalar_one_or_none()
+        # A general conversation may already contain private messages. Starting
+        # a course chat must create a fresh transcript instead of relabelling
+        # that history as course content visible to staff.
+        if conv and course_id and conv.course_id is None:
+            conv = None
         if conv:
             if course_id and conv.course_id and conv.course_id != course_id:
                 raise ValueError("Conversation course mismatch")
             if chapter_id and conv.chapter_id and conv.chapter_id != chapter_id:
                 raise ValueError("Conversation chapter mismatch")
-            if course_id and not conv.course_id:
-                conv.course_id = course_id
             if chapter_id and not conv.chapter_id:
                 conv.chapter_id = chapter_id
                 conv.chapter_index = chapter_index

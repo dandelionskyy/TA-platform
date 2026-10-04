@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { marked } from 'marked';
 import katex from 'katex';
 import hljs from 'highlight.js';
+import DOMPurify from 'dompurify';
 import { useLanguage } from '../../i18n/LanguageContext';
 
 interface Props {
@@ -39,7 +40,11 @@ export default function ChatMessage({ role, content }: Props) {
     } catch {
       html = marked.parse(content, { async: false }) as string;
     }
-    contentRef.current.innerHTML = html;
+    // Assistant text can include user-supplied material. Sanitize the final
+    // Markdown and KaTeX HTML before adding it to the document.
+    contentRef.current.innerHTML = DOMPurify.sanitize(html, {
+      FORBID_TAGS: ['img', 'iframe', 'form', 'audio', 'video'],
+    });
 
     // Syntax highlighting
     contentRef.current.querySelectorAll('pre code').forEach((block) => {

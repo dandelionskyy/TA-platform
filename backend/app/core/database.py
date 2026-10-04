@@ -39,6 +39,7 @@ async def init_db():
         AuditLog, RefreshToken, Assignment, Submission, AttendanceSession, AttendanceRecord, Announcement,
         MessagePermission, DirectThread, DirectMessage,
     )
+    import app.models.bridge  # noqa: F401 - register BRIDGE tables for local create_all
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
         await conn.run_sync(_ensure_legacy_columns)

@@ -165,12 +165,6 @@ class ApiClient {
     return this.request<{ message: string }>('/auth/send-sms', { method: 'POST', body: { phone } });
   }
 
-  getRegistrationCode(phone: string) {
-    return this.request<{ message: string; phone: string; code: string; expires_in: number }>('/auth/registration-code', {
-      method: 'POST', body: { phone },
-    });
-  }
-
   logout(refreshToken: string) {
     return this.request<{ message: string }>('/auth/logout', { method: 'POST', body: { refresh_token: refreshToken } });
   }
@@ -271,6 +265,10 @@ class ApiClient {
 
   enrollStudent(courseId: string, studentId: string) {
     return this.request<any>(`/teacher/courses/${courseId}/students/${studentId}`, { method: 'POST' });
+  }
+
+  removeStudentFromCourse(courseId: string, studentId: string) {
+    return this.request<any>(`/teacher/courses/${courseId}/students/${studentId}`, { method: 'DELETE' });
   }
 
   getCourseStudents(courseId: string) {

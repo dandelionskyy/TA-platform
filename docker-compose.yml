@@ -9,7 +9,7 @@ services:
     environment:
       POSTGRES_DB: ta_platform
       POSTGRES_USER: ta_admin
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-ta_platform}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD in .env}
     restart: always
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ta_admin -d ta_platform"]
@@ -29,13 +29,13 @@ services:
     build: ./backend
     container_name: ta-backend
     environment:
-      DATABASE_URL: postgresql+asyncpg://ta_admin:${DB_PASSWORD:-ta_platform}@postgres:5432/ta_platform
+      DATABASE_URL: postgresql+asyncpg://ta_admin:${DB_PASSWORD:?Set DB_PASSWORD in .env}@postgres:5432/ta_platform
       REDIS_URL: redis://redis:6379
       USE_REDIS: ${USE_REDIS:-true}
       DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY}
       DEEPSEEK_API_BASE: ${DEEPSEEK_API_BASE:-https://api.deepseek.com}
       DEEPSEEK_MODEL_NAME: ${DEEPSEEK_MODEL_NAME:-deepseek-chat}
-      JWT_SECRET: ${JWT_SECRET}
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env}
       JWT_ACCESS_EXPIRE_MINUTES: ${JWT_ACCESS_EXPIRE_MINUTES:-30}
       JWT_REFRESH_EXPIRE_DAYS: ${JWT_REFRESH_EXPIRE_DAYS:-7}
       ALIBABA_SMS_ACCESS_KEY: ${ALIBABA_SMS_ACCESS_KEY:-}
@@ -49,7 +49,15 @@ services:
       ALIBABA_TTS_ENDPOINT: ${ALIBABA_TTS_ENDPOINT:-}
       ALIBABA_TTS_VOICE: ${ALIBABA_TTS_VOICE:-siyue}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost}
-      ROBOT_AUTH_KEYS: ${ROBOT_AUTH_KEYS:-TA-Robot-01:robot-secret-key-change-me}
+      ROBOT_AUTH_KEYS: ${ROBOT_AUTH_KEYS:?Set ROBOT_AUTH_KEYS in .env}
+      BRIDGE_LLM_URL: ${BRIDGE_LLM_URL:-}
+      BRIDGE_LLM_MODEL: ${BRIDGE_LLM_MODEL:-}
+      BRIDGE_EMBEDDINGS_URL: ${BRIDGE_EMBEDDINGS_URL:-}
+      BRIDGE_EMBEDDINGS_MODEL: ${BRIDGE_EMBEDDINGS_MODEL:-bge-m3}
+      BRIDGE_ALLOW_LEXICAL_PROTOTYPE: ${BRIDGE_ALLOW_LEXICAL_PROTOTYPE:-false}
+      BRIDGE_MIN_SIMILARITY: ${BRIDGE_MIN_SIMILARITY:-0.65}
+      BRIDGE_UPLOAD_MAX_MB: ${BRIDGE_UPLOAD_MAX_MB:-50}
+      BRIDGE_SESSION_DAYS: ${BRIDGE_SESSION_DAYS:-30}
       ROBOT_HEARTBEAT_TIMEOUT_SECONDS: ${ROBOT_HEARTBEAT_TIMEOUT_SECONDS:-15}
       SEED_DEMO_DATA: ${SEED_DEMO_DATA:-false}
     depends_on:

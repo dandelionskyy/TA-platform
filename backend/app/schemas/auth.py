@@ -15,7 +15,9 @@ class LoginRequest(BaseModel):
 
 
 class SendSmsRequest(BaseModel):
-    phone: str = Field(..., min_length=11, max_length=20)
+    # Match the registration form and use a single canonical Redis key per
+    # mainland China mobile number. Alternate spellings cannot reset cooldown.
+    phone: str = Field(..., min_length=11, max_length=11, pattern=r"^1[3-9][0-9]{9}$")
 
 
 class TokenResponse(BaseModel):

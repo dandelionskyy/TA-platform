@@ -5,8 +5,6 @@ from app.core.database import get_db
 from app.core.dependencies import RequireTA
 from app.models.user import User
 from app.models.conversation import Conversation, Message
-from app.models.robot import RobotQuestion
-from app.models.usage_log import UsageLog
 from app.models.course import Course, CourseStaff, Enrollment
 
 router = APIRouter(prefix="/api/ta", tags=["ta"])
@@ -19,6 +17,15 @@ async def ta_can_access_student(db: AsyncSession, ta_id: str, student_id: str) -
         CourseStaff.course_id == Enrollment.course_id,
         Enrollment.student_id == student_id,
     ))))
+
+
+def ta_conversation_scope(ta_id: str):
+    """Only chats explicitly belonging to a course assigned to this TA."""
+    return exists().where(
+        CourseStaff.course_id == Conversation.course_id,
+        CourseStaff.user_id == ta_id,
+        CourseStaff.role == "ta",
+    )
 
 
 @router.get("/students/{student_id}/usage-stats")
@@ -45,31 +52,21 @@ async def get_student_usage(
     msg_count = (await db.execute(
         select(func.count(Message.id))
         .join(Conversation, Message.conversation_id == Conversation.id)
-        .where(Conversation.user_id == student_id)
+        .where(Conversation.user_id == student_id, ta_conversation_scope(current_user.id))
     )).scalar() or 0
 
     # Conversation count
     conv_count = (await db.execute(
-        select(func.count(Conversation.id)).where(Conversation.user_id == student_id)
-    )).scalar() or 0
-
-    # Login count
-    login_count = (await db.execute(
-        select(func.count(UsageLog.id)).where(
-            UsageLog.user_id == student_id, UsageLog.action == "login"
+        select(func.count(Conversation.id)).where(
+            Conversation.user_id == student_id, ta_conversation_scope(current_user.id)
         )
-    )).scalar() or 0
-
-    # Robot questions count
-    robot_count = (await db.execute(
-        select(func.count(RobotQuestion.id)).where(RobotQuestion.student_id == student_id)
     )).scalar() or 0
 
     # Last active
     last_msg = (await db.execute(
         select(Message.created_at)
         .join(Conversation, Message.conversation_id == Conversation.id)
-        .where(Conversation.user_id == student_id)
+        .where(Conversation.user_id == student_id, ta_conversation_scope(current_user.id))
         .order_by(desc(Message.created_at))
         .limit(1)
     )).scalar_one_or_none()
@@ -81,8 +78,8 @@ async def get_student_usage(
         "total_chat_messages": msg_count,
         "total_conversations": conv_count,
         "last_active_at": last_msg.isoformat() if last_msg else None,
-        "total_login_count": login_count,
-        "total_robot_questions": robot_count,
+        "total_login_count": None,  # Neither login nor robot activity has a course ID.
+        "total_robot_questions": None,
     }
 
 
@@ -100,23 +97,21 @@ async def list_student_usage(
     for student in students:
         messages = (await db.execute(select(func.count(Message.id)).join(
             Conversation, Message.conversation_id == Conversation.id
-        ).where(Conversation.user_id == student.id))).scalar() or 0
+        ).where(Conversation.user_id == student.id, ta_conversation_scope(current_user.id)))).scalar() or 0
         conversations = (await db.execute(select(func.count(Conversation.id)).where(
-            Conversation.user_id == student.id
+            Conversation.user_id == student.id, ta_conversation_scope(current_user.id)
         ))).scalar() or 0
         last_active = (await db.execute(select(Message.created_at).join(
             Conversation, Message.conversation_id == Conversation.id
-        ).where(Conversation.user_id == student.id).order_by(desc(Message.created_at)).limit(1))).scalar_one_or_none()
-        logins = (await db.execute(select(func.count(UsageLog.id)).where(
-            UsageLog.user_id == student.id, UsageLog.action == "login"
-        ))).scalar() or 0
+        ).where(Conversation.user_id == student.id, ta_conversation_scope(current_user.id))
+         .order_by(desc(Message.created_at)).limit(1))).scalar_one_or_none()
         output.append({
             "user_id": student.id,
             "student_id": student.student_id,
             "display_name": student.display_name,
             "total_chat_messages": messages,
             "total_conversations": conversations,
-            "total_login_count": logins,
+            "total_login_count": None,
             "last_active_at": last_active.isoformat() if last_active else None,
         })
     return {"students": output}
@@ -127,42 +122,27 @@ async def ta_dashboard(
     current_user: User = Depends(RequireTA),
     db: AsyncSession = Depends(get_db),
 ):
-    """Aggregate anonymized stats. No individual student details."""
+    """Course-scoped legacy counts (the BRIDGE dashboard is separate)."""
     total_students = (await db.execute(
-        select(func.count(User.id)).join(Enrollment, Enrollment.student_id == User.id).join(
+        select(func.count(func.distinct(User.id))).join(Enrollment, Enrollment.student_id == User.id).join(
             Course, Course.id == Enrollment.course_id
         ).join(CourseStaff, CourseStaff.course_id == Course.id).where(
             User.role == "student", CourseStaff.user_id == current_user.id, CourseStaff.role == "ta"
-        ).distinct()
+        )
     )).scalar() or 0
 
     total_messages = (await db.execute(
         select(func.count(Message.id)).join(Conversation, Message.conversation_id == Conversation.id)
-        .join(Enrollment, Enrollment.student_id == Conversation.user_id)
-        .join(CourseStaff, CourseStaff.course_id == Enrollment.course_id)
-        .where(CourseStaff.user_id == current_user.id, CourseStaff.role == "ta")
+        .where(ta_conversation_scope(current_user.id))
     )).scalar() or 0
 
     total_conversations = (await db.execute(
-        select(func.count(Conversation.id)).join(Enrollment, Enrollment.student_id == Conversation.user_id)
-        .join(CourseStaff, CourseStaff.course_id == Enrollment.course_id)
-        .where(CourseStaff.user_id == current_user.id, CourseStaff.role == "ta")
-    )).scalar() or 0
-
-    total_robot_questions = (await db.execute(
-        select(func.count(RobotQuestion.id)).where(
-            exists().where(
-                Enrollment.student_id == RobotQuestion.student_id,
-                CourseStaff.course_id == Enrollment.course_id,
-                CourseStaff.user_id == current_user.id,
-                CourseStaff.role == "ta",
-            )
-        )
+        select(func.count(Conversation.id)).where(ta_conversation_scope(current_user.id))
     )).scalar() or 0
 
     return {
         "total_students": total_students,
         "total_messages": total_messages,
         "total_conversations": total_conversations,
-        "total_robot_questions": total_robot_questions,
+        "total_robot_questions": None,
     }

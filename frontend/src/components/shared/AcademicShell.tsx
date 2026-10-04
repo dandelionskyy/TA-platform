@@ -20,6 +20,7 @@ export default function AcademicShell({ role, eyebrow, title, description, child
   const links = role === 'student' ? [
     { label: text('学习概览', 'Overview'), to: '/student', end: true },
     { label: text('AI 助教', 'AI Assistant'), to: '/student/chat' },
+    { label: text('BRIDGE 学习助手', 'BRIDGE tutor'), to: '/bridge' },
     { label: text('我的作业', 'My assignments'), to: '/student/assignments' },
     { label: text('签到考勤', 'Attendance'), to: '/student/attendance' },
     { label: text('课程通知', 'Announcements'), to: '/student/announcements' },
@@ -34,6 +35,7 @@ export default function AcademicShell({ role, eyebrow, title, description, child
   ] : [
     { label: text('教学概览', 'Overview'), to: '/teacher', end: true },
     { label: text('课程资料', 'Course materials'), to: '/teacher/materials' },
+    { label: text('BRIDGE 管理', 'BRIDGE administration'), to: '/teacher/bridge' },
     { label: text('作业管理', 'Assignments'), to: '/teacher/assignments' },
     { label: text('考勤管理', 'Attendance'), to: '/teacher/attendance' },
     { label: text('课程通知', 'Announcements'), to: '/teacher/announcements' },

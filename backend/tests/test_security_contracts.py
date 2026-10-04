@@ -1,7 +1,7 @@
 import asyncio
 from io import BytesIO
 
-from PyPDF2 import PdfWriter
+from pypdf import PdfWriter
 
 from app.core.security import hash_password, verify_password
 from app.routers.ws import robot_key_valid

@@ -10,22 +10,21 @@ export default function RegisterPage() {
   const [loading, setLoading] = useState(false);
   const [sending, setSending] = useState(false);
   const [cooldown, setCooldown] = useState(0);
-  const [displayedCode, setDisplayedCode] = useState('');
+  const [codeSent, setCodeSent] = useState(false);
   const { register } = useAuthStore();
   const { text } = useLanguage();
   const navigate = useNavigate();
-  const update = (field: keyof typeof form) => (event: React.ChangeEvent<HTMLInputElement>) => setForm(prev => ({ ...prev, [field]: event.target.value }));
+  const update = (field: keyof typeof form) => (event: React.ChangeEvent<HTMLInputElement>) => {
+    if (field === 'phone') setCodeSent(false);
+    setForm(prev => ({ ...prev, [field]: event.target.value }));
+  };
 
   const sendCode = async () => {
     if (!/^1\d{10}$/.test(form.phone)) { setError(text('请输入有效的中国大陆手机号。', 'Enter a valid mainland China phone number.')); return; }
-    setSending(true); setError('');
+    setSending(true); setError(''); setCodeSent(false);
     try {
-      const result = await api.getRegistrationCode(form.phone);
-      setDisplayedCode(result.code);
-      window.setTimeout(
-        () => setDisplayedCode(current => current === result.code ? '' : current),
-        result.expires_in * 1000,
-      );
+      await api.sendSms(form.phone);
+      setCodeSent(true);
       setCooldown(60);
       const timer = window.setInterval(() => setCooldown(value => { if (value <= 1) { window.clearInterval(timer); return 0; } return value - 1; }), 1000);
     } catch (err: any) { setError(err.message || text('校验码获取失败。', 'Unable to get a code.')); }
@@ -48,24 +47,13 @@ export default function RegisterPage() {
           <label className="block text-sm font-medium">{text('姓名', 'Display name')} <span className="muted font-normal">({text('可选', 'optional')})</span><input className="auth-input mt-1.5" value={form.display_name} onChange={update('display_name')} /></label>
           <label className="block text-sm font-medium">{text('手机号', 'Phone number')}<input className="auth-input mt-1.5" inputMode="tel" value={form.phone} onChange={update('phone')} required /></label>
           <div className="flex gap-2"><label className="min-w-0 flex-1 text-sm font-medium">{text('注册校验码', 'Registration code')}<input className="auth-input mt-1.5" inputMode="numeric" maxLength={6} value={form.sms_code} onChange={update('sms_code')} required /></label><button className="btn mt-6 shrink-0" type="button" onClick={sendCode} disabled={sending || cooldown > 0}>{cooldown ? `${cooldown}s` : sending ? text('获取中', 'Getting') : text('获取校验码', 'Get code')}</button></div>
+          {codeSent && <p className="text-sm muted" role="status">{text('验证码已发送至您的手机。', 'The verification code has been sent to your phone.')}</p>}
           <label className="block text-sm font-medium">{text('密码', 'Password')}<input className="auth-input mt-1.5" type="password" minLength={6} value={form.password} onChange={update('password')} autoComplete="new-password" required /></label>
           {error && <div className="auth-error" role="alert">{error}</div>}
           <button className="btn btn-primary w-full" type="submit" disabled={loading}>{loading ? text('创建中...', 'Creating account...') : text('创建账号', 'Create account')}</button>
         </form>
         <p className="mt-5 text-center text-sm muted">{text('已经注册？', 'Already registered?')} <Link className="text-[var(--accent-color)] hover:underline" to="/login">{text('登录', 'Sign in')}</Link></p>
       </section>
-      {displayedCode && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 px-4" role="dialog" aria-modal="true" aria-labelledby="registration-code-title">
-          <section className="w-full max-w-sm rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] p-6 shadow-xl">
-            <h2 id="registration-code-title" className="text-lg font-semibold">{text('注册校验码', 'Registration code')}</h2>
-            <div className="my-5 rounded-md border border-[var(--border-color)] bg-[var(--bg-secondary)] px-4 py-4 text-center font-mono text-3xl font-semibold tracking-[.22em] text-[var(--accent-color)]">
-              {displayedCode}
-            </div>
-            <p className="text-sm muted">{text('校验码 5 分钟内有效。', 'The code is valid for 5 minutes.')}</p>
-            <button className="btn btn-primary mt-5 w-full" type="button" onClick={() => setDisplayedCode('')}>{text('我知道了', 'Got it')}</button>
-          </section>
-        </div>
-      )}
     </main>
   );
 }

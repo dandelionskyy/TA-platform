@@ -1,5 +1,6 @@
 # Ported and enhanced from the original AI Chatbot (g:\Desktop\Uni\2025启航计划\AI Chatbot\deepseek_client.py)
 import base64
+import asyncio
 import io
 import json
 import os
@@ -7,10 +8,10 @@ import re
 from datetime import datetime
 from typing import Optional, List, Dict, Tuple
 from openai import OpenAI
-from PyPDF2 import PdfReader
 from pptx import Presentation
 from docx import Document
 from app.core.config import get_settings
+from app.services.pdf_extraction import extract_pdf_pages
 
 settings = get_settings()
 
@@ -22,12 +23,7 @@ client = OpenAI(
 # ==================== File Parsers ====================
 
 def extract_text_from_pdf(pdf_data: bytes) -> str:
-    text = ""
-    with io.BytesIO(pdf_data) as f:
-        reader = PdfReader(f)
-        for page in reader.pages:
-            text += page.extract_text() or ""
-    return text
+    return "".join(extract_pdf_pages(pdf_data))
 
 
 def extract_text_from_pptx(pptx_data: bytes) -> str:
@@ -57,13 +53,7 @@ pdf_metadata_cache: Dict[str, Dict] = {}
 
 
 def extract_pdf_by_page(pdf_data: bytes) -> List[str]:
-    pages = []
-    with io.BytesIO(pdf_data) as f:
-        reader = PdfReader(f)
-        for i, page in enumerate(reader.pages):
-            page_text = page.extract_text() or ""
-            pages.append(page_text)
-    return pages
+    return extract_pdf_pages(pdf_data)
 
 
 def get_cached_pdf_pages(course_name: str, chapter_index: int) -> Optional[List[str]]:
@@ -354,7 +344,7 @@ async def get_deepseek_response(
                 ]}]
             else:
                 if filename.lower().endswith('.pdf'):
-                    pages = extract_pdf_by_page(file_data)
+                    pages = await asyncio.to_thread(extract_pdf_by_page, file_data)
                     file_context = select_relevant_pages(user_question, pages, include_page_numbers=True)
                 elif filename.lower().endswith('.pptx'):
                     file_context = extract_text_from_pptx(file_data)
@@ -408,7 +398,7 @@ async def get_deepseek_response(
                     if cached_pages is None:
                         with open(pdf_path, 'rb') as f:
                             pdf_bytes = f.read()
-                            pages = extract_pdf_by_page(pdf_bytes)
+                            pages = await asyncio.to_thread(extract_pdf_by_page, pdf_bytes)
                             cache_pdf_pages(course_name, chapter_index, pages)
                     else:
                         pages = cached_pages
