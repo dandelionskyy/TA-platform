@@ -14,6 +14,9 @@ function localizeError(detail: unknown): string {
     'Invalid credentials': '账号或密码错误',
     'Account is deactivated': '账号已停用',
     'Invalid or expired SMS code': '验证码错误或已过期',
+    'Invalid or expired registration code': '注册校验码错误或已过期',
+    'Wait before requesting another registration code': '请稍后再获取新的注册校验码',
+    'Registration code service is temporarily unavailable': '注册校验码服务暂时不可用',
     'Failed to send SMS': '验证码发送失败',
     'Please wait before requesting another code': '请稍后再获取新的校验码',
     'Student ID or phone already registered': '学号或手机号已注册',
@@ -165,6 +168,12 @@ class ApiClient {
     return this.request<{ message: string }>('/auth/send-sms', { method: 'POST', body: { phone } });
   }
 
+  getRegistrationCode(phone: string) {
+    return this.request<{ message: string; phone: string; code: string; expires_in: number }>('/auth/registration-code', {
+      method: 'POST', body: { phone },
+    });
+  }
+
   logout(refreshToken: string) {
     return this.request<{ message: string }>('/auth/logout', { method: 'POST', body: { refresh_token: refreshToken } });
   }
@@ -275,8 +284,8 @@ class ApiClient {
     return this.request<any>(`/teacher/courses/${courseId}/students`);
   }
 
-  getAvailableCourseStudents(courseId: string, search = '', page = 1) {
-    return this.request<any>(`/teacher/courses/${courseId}/available-students?search=${encodeURIComponent(search)}&page=${page}`);
+  getAvailableCourseStudents(courseId: string, search = '', page = 1, pageSize = 200) {
+    return this.request<any>(`/teacher/courses/${courseId}/available-students?search=${encodeURIComponent(search)}&page=${page}&page_size=${pageSize}`);
   }
 
   enrollStudentsBulk(courseId: string, studentIds: string[]) {

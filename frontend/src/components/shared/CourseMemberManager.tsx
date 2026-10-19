@@ -17,9 +17,10 @@ interface Student {
 
 interface CourseMemberManagerProps {
   courses: Course[];
+  canRemove?: boolean;
 }
 
-export default function CourseMemberManager({ courses }: CourseMemberManagerProps) {
+export default function CourseMemberManager({ courses, canRemove = true }: CourseMemberManagerProps) {
   const { text } = useLanguage();
   const [courseId, setCourseId] = useState('');
   const [search, setSearch] = useState('');
@@ -181,9 +182,9 @@ export default function CourseMemberManager({ courses }: CourseMemberManagerProp
                 <div className="truncate text-sm font-medium">{student.display_name || student.student_id}</div>
                 <div className="mt-1 truncate text-xs muted">{student.student_id} · {student.phone}</div>
               </div>
-              <button type="button" className="btn px-2.5 py-1.5 text-xs" onClick={() => removeStudent(student)} disabled={loading}>
+              {canRemove && <button type="button" className="btn px-2.5 py-1.5 text-xs" onClick={() => removeStudent(student)} disabled={loading}>
                 {text('移除', 'Remove')}
-              </button>
+              </button>}
             </div>)}
             {enrolled.length === 0 && <p className="px-4 py-10 text-center text-sm muted">{text('暂时没有学生。', 'No students enrolled yet.')}</p>}
           </div>

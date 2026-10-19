@@ -4,6 +4,7 @@ import RobotMonitor from '../components/robot/RobotMonitor';
 import { LanguageToggle, useLanguage } from '../i18n/LanguageContext';
 import { api } from '../services/api';
 import { useAuthStore } from '../stores/authStore';
+import CourseMemberManager from '../components/shared/CourseMemberManager';
 
 interface StudentUsage {
   user_id: string;
@@ -21,10 +22,12 @@ export default function TAPage() {
   const [dashboard, setDashboard] = useState<any>();
   const [students, setStudents] = useState<StudentUsage[]>([]);
   const [dark, setDark] = useState(() => localStorage.getItem('theme') === 'dark');
+  const [courses, setCourses] = useState<any[]>([]);
 
   useEffect(() => {
     api.getTADashboard().then(setDashboard).catch(() => {});
     api.getTAStudents().then(data => setStudents(data.students || [])).catch(() => {});
+    api.getCourses().then(data => setCourses(data.courses || [])).catch(() => {});
   }, []);
 
   const toggleDark = () => {
@@ -67,6 +70,7 @@ export default function TAPage() {
         <div><p className="text-xs font-semibold uppercase tracking-[.14em] text-[var(--accent-color)]">{text('助教工作台', 'Teaching assistant')}</p><h1 className="mt-1 text-2xl font-semibold">{text('工作概览', 'Usage overview')}</h1><p className="mt-1 text-sm muted">{text('查看负责课程的学习活跃度，不接触学生 AI 对话内容。', 'Monitor assigned-course activity without opening student AI conversations.')}</p></div>
         <div className="grid grid-cols-2 gap-3 md:grid-cols-4">{metrics.map(([label, value]) => <div className="panel metric" key={label}><div className="metric-value">{value}</div><div className="mt-1 text-xs muted">{label}</div></div>)}</div>
         <section className="panel overflow-hidden"><div className="flex items-center justify-between border-b border-[var(--border-color)] px-4 py-3"><h2 className="font-semibold">{text('学生活跃度', 'Student activity')}</h2><span className="text-xs muted">{text('仅显示统计', 'Counts only')}</span></div><div className="overflow-x-auto"><table className="w-full min-w-[620px] text-left text-sm"><thead className="bg-[var(--bg-secondary)] text-xs muted"><tr><th className="px-4 py-3 font-medium">{text('学生', 'Student')}</th><th className="px-4 py-3 font-medium">{text('消息', 'Messages')}</th><th className="px-4 py-3 font-medium">{text('会话', 'Conversations')}</th><th className="px-4 py-3 font-medium">{text('登录', 'Logins')}</th><th className="px-4 py-3 font-medium">{text('最近活跃', 'Last active')}</th></tr></thead><tbody>{students.map(student => <tr key={student.user_id} className="border-t border-[var(--border-color)]"><td className="px-4 py-3"><div className="font-medium">{student.display_name || student.student_id}</div><div className="text-xs muted">{student.student_id}</div></td><td className="px-4 py-3">{student.total_chat_messages}</td><td className="px-4 py-3">{student.total_conversations}</td><td className="px-4 py-3">{student.total_login_count}</td><td className="px-4 py-3 muted">{student.last_active_at ? new Date(student.last_active_at).toLocaleString(locale) : '—'}</td></tr>)}</tbody></table>{students.length === 0 && <p className="px-4 py-8 text-center text-sm muted">{text('暂无已分配学生。', 'No assigned students yet.')}</p>}</div></section>
+        <CourseMemberManager courses={courses} canRemove={false} />
         <section className="panel p-4"><h2 className="mb-3 font-semibold">{text('机器人状态', 'Robot status')}</h2><RobotMonitor role="ta" /></section>
       </div>
     </main>

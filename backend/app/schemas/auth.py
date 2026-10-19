@@ -20,6 +20,16 @@ class SendSmsRequest(BaseModel):
     phone: str = Field(..., min_length=11, max_length=11, pattern=r"^1[3-9][0-9]{9}$")
 
 
+class RegistrationCodeRequest(BaseModel):
+    """Request a code that is shown in the registration page itself.
+
+    This is intended for controlled course onboarding where SMS delivery is
+    unavailable. It is still stored and verified server-side, so the browser
+    cannot invent an arbitrary code.
+    """
+    phone: str = Field(..., min_length=11, max_length=11, pattern=r"^1[3-9][0-9]{9}$")
+
+
 class TokenResponse(BaseModel):
     access_token: str
     refresh_token: str

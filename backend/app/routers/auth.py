@@ -9,12 +9,13 @@ from app.schemas.auth import (
     RegisterRequest,
     LoginRequest,
     SendSmsRequest,
+    RegistrationCodeRequest,
     AuthResponse,
     TokenResponse,
     RefreshRequest,
 )
 from app.services.auth_service import register_user, login_user, refresh_access_token, revoke_refresh_token
-from app.services.sms_service import SmsCooldownError, SmsRateStoreUnavailableError, send_sms
+from app.services.sms_service import SmsCooldownError, SmsRateStoreUnavailableError, send_sms, issue_registration_code
 from app.core.dependencies import RequireTeacher
 from app.core.security import hash_password
 from app.core.config import get_settings
@@ -96,9 +97,25 @@ async def send_sms_code(req: SendSmsRequest):
 
 
 @router.post("/registration-code")
-async def create_registration_code():
-    """Retired: returning an OTP to the requesting browser defeats verification."""
-    raise HTTPException(status_code=status.HTTP_410_GONE, detail="On-page registration codes are disabled")
+async def create_registration_code(req: RegistrationCodeRequest | None = None):
+    """Issue a short-lived code for controlled, no-SMS course registration.
+
+    The no-body form remains retired for compatibility with old clients. New
+    clients must provide the phone number used on the registration form.
+    """
+    if req is None:
+        raise HTTPException(status_code=status.HTTP_410_GONE, detail="On-page registration codes require a phone number")
+    try:
+        code = await issue_registration_code(req.phone)
+    except SmsRateStoreUnavailableError as exc:
+        raise HTTPException(status_code=503, detail="Registration code service is temporarily unavailable") from exc
+    if code is None:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Wait before requesting another registration code",
+            headers={"Retry-After": "60"},
+        )
+    return {"message": "Registration code generated", "phone": req.phone, "code": code, "expires_in": 300}
 
 
 @router.get("/me")

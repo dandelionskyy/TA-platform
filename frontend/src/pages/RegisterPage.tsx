@@ -11,6 +11,7 @@ export default function RegisterPage() {
   const [sending, setSending] = useState(false);
   const [cooldown, setCooldown] = useState(0);
   const [codeSent, setCodeSent] = useState(false);
+  const [registrationCode, setRegistrationCode] = useState('');
   const { register } = useAuthStore();
   const { text } = useLanguage();
   const navigate = useNavigate();
@@ -23,7 +24,8 @@ export default function RegisterPage() {
     if (!/^1\d{10}$/.test(form.phone)) { setError(text('请输入有效的中国大陆手机号。', 'Enter a valid mainland China phone number.')); return; }
     setSending(true); setError(''); setCodeSent(false);
     try {
-      await api.sendSms(form.phone);
+      const result = await api.getRegistrationCode(form.phone);
+      setRegistrationCode(result.code);
       setCodeSent(true);
       setCooldown(60);
       const timer = window.setInterval(() => setCooldown(value => { if (value <= 1) { window.clearInterval(timer); return 0; } return value - 1; }), 1000);
@@ -47,7 +49,10 @@ export default function RegisterPage() {
           <label className="block text-sm font-medium">{text('姓名', 'Display name')} <span className="muted font-normal">({text('可选', 'optional')})</span><input className="auth-input mt-1.5" value={form.display_name} onChange={update('display_name')} /></label>
           <label className="block text-sm font-medium">{text('手机号', 'Phone number')}<input className="auth-input mt-1.5" inputMode="tel" value={form.phone} onChange={update('phone')} required /></label>
           <div className="flex gap-2"><label className="min-w-0 flex-1 text-sm font-medium">{text('注册校验码', 'Registration code')}<input className="auth-input mt-1.5" inputMode="numeric" maxLength={6} value={form.sms_code} onChange={update('sms_code')} required /></label><button className="btn mt-6 shrink-0" type="button" onClick={sendCode} disabled={sending || cooldown > 0}>{cooldown ? `${cooldown}s` : sending ? text('获取中', 'Getting') : text('获取校验码', 'Get code')}</button></div>
-          {codeSent && <p className="text-sm muted" role="status">{text('验证码已发送至您的手机。', 'The verification code has been sent to your phone.')}</p>}
+          {codeSent && <div className="rounded-md border border-[var(--accent-color)]/30 bg-[var(--accent-muted)] px-3 py-2 text-sm" role="status">
+            <span>{text('本次注册验证码：', 'Your registration code: ')}</span><strong className="ml-1 tracking-[.18em]">{registrationCode}</strong>
+            <span className="ml-2 muted">{text('请在 5 分钟内输入。验证码仅显示在当前页面，不发送短信。', 'Enter it within 5 minutes. It is shown here and no SMS is sent.')}</span>
+          </div>}
           <label className="block text-sm font-medium">{text('密码', 'Password')}<input className="auth-input mt-1.5" type="password" minLength={6} value={form.password} onChange={update('password')} autoComplete="new-password" required /></label>
           {error && <div className="auth-error" role="alert">{error}</div>}
           <button className="btn btn-primary w-full" type="submit" disabled={loading}>{loading ? text('创建中...', 'Creating account...') : text('创建账号', 'Create account')}</button>

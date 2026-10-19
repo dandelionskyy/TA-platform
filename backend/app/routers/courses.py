@@ -47,7 +47,7 @@ class MemberRequest(BaseModel):
 
 
 class BulkEnrollmentRequest(BaseModel):
-    student_ids: list[str] = Field(..., min_length=1, max_length=200)
+    student_ids: list[str] = Field(..., min_length=1, max_length=1000)
 
 
 def _iso(value) -> str | None:
@@ -340,12 +340,10 @@ async def create_course(
 async def enroll_students_bulk(
     course_id: str,
     payload: BulkEnrollmentRequest,
-    current_user: User = Depends(RequireTeacher),
+    current_user: User = Depends(RequireTeacherOrTA),
     db: AsyncSession = Depends(get_db),
 ):
-    owns = await db.scalar(select(exists().where(Course.id == course_id, Course.teacher_id == current_user.id)))
-    if not owns:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Course access denied")
+    await _staff_course(db, current_user, course_id)
 
     requested_ids = list(dict.fromkeys(payload.student_ids))
     student_result = await db.execute(select(User).where(
@@ -377,13 +375,11 @@ async def available_course_students(
     course_id: str,
     search: str = Query("", max_length=100),
     page: int = Query(1, ge=1),
-    page_size: int = Query(50, ge=1, le=200),
-    current_user: User = Depends(RequireTeacher),
+    page_size: int = Query(200, ge=1, le=500),
+    current_user: User = Depends(RequireTeacherOrTA),
     db: AsyncSession = Depends(get_db),
 ):
-    owns = await db.scalar(select(exists().where(Course.id == course_id, Course.teacher_id == current_user.id)))
-    if not owns:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Course access denied")
+    await _staff_course(db, current_user, course_id)
 
     enrolled_ids = select(Enrollment.student_id).where(Enrollment.course_id == course_id)
     query = select(User).where(
@@ -413,12 +409,12 @@ async def available_course_students(
 async def enroll_student(
     course_id: str,
     student_id: str,
-    current_user: User = Depends(RequireTeacher),
+    current_user: User = Depends(RequireTeacherOrTA),
     db: AsyncSession = Depends(get_db),
 ):
-    owns = await db.scalar(select(exists().where(Course.id == course_id, Course.teacher_id == current_user.id)))
+    await _staff_course(db, current_user, course_id)
     student = await db.scalar(select(User).where(User.id == student_id, User.role == "student"))
-    if not owns or not student:
+    if not student:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Course or student not found")
     existing = await db.scalar(select(Enrollment).where(
         Enrollment.course_id == course_id, Enrollment.student_id == student_id,
@@ -472,12 +468,10 @@ async def assign_ta(
 @teacher_router.get("/courses/{course_id}/students")
 async def course_students(
     course_id: str,
-    current_user: User = Depends(RequireTeacher),
+    current_user: User = Depends(RequireTeacherOrTA),
     db: AsyncSession = Depends(get_db),
 ):
-    owns = await db.scalar(select(exists().where(Course.id == course_id, Course.teacher_id == current_user.id)))
-    if not owns:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Course access denied")
+    await _staff_course(db, current_user, course_id)
     result = await db.execute(select(User).join(Enrollment, Enrollment.student_id == User.id).where(
         Enrollment.course_id == course_id, User.role == "student",
     ).order_by(User.student_id))

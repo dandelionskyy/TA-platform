@@ -20,9 +20,10 @@ async def register_user(
     sms_code: str,
     display_name: str = "",
 ) -> dict:
-    # Verify the one-time registration code. It may come from SMS or the on-page flow.
+    # Verify the one-time registration code. The current onboarding flow shows
+    # it on the registration page; the same store remains compatible with SMS.
     if not await verify_sms(phone, sms_code):
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired SMS code")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired registration code")
 
     # Check if student_id or phone already exists
     existing = await db.execute(
