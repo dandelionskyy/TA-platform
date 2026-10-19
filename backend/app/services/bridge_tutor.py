@@ -64,9 +64,62 @@ def _can_be_explanation(message: str, evidence: str, language: str) -> bool:
     return True
 
 
+def _parse_json_object(raw: object) -> dict | None:
+    """Parse a JSON object from an Ollama or OpenAI-compatible response."""
+    if not isinstance(raw, str):
+        return None
+    text = raw.strip()
+    if text.startswith("```"):
+        text = re.sub(r"^```(?:json)?\s*|\s*```$", "", text, flags=re.IGNORECASE)
+    try:
+        value = json.loads(text)
+        return value if isinstance(value, dict) else None
+    except (TypeError, ValueError):
+        start, end = text.find("{"), text.rfind("}")
+        if start < 0 or end <= start:
+            return None
+        try:
+            value = json.loads(text[start:end + 1])
+            return value if isinstance(value, dict) else None
+        except (TypeError, ValueError):
+            return None
+
+
 async def _local_json(prompt: str) -> dict | None:
-    """Use the explicitly configured institution-hosted Ollama API only."""
+    """Call the configured Ollama or DeepSeek-compatible generation provider.
+
+    BRIDGE intentionally keeps embeddings separate. DeepSeek is only a generation
+    provider here; BRIDGE_EMBEDDINGS_URL must still point to an Ollama-compatible
+    multilingual embedding endpoint when DeepSeek is selected.
+    """
     settings = get_settings()
+    provider = settings.BRIDGE_PROVIDER.strip().lower() or "ollama"
+    if provider == "deepseek":
+        api_key = settings.DEEPSEEK_API_KEY.strip()
+        base = settings.BRIDGE_DEEPSEEK_BASE_URL.strip().rstrip("/")
+        model = settings.BRIDGE_DEEPSEEK_MODEL.strip() or "deepseek-chat"
+        if not api_key or not base:
+            return None
+        try:
+            async with httpx.AsyncClient(timeout=30.0, trust_env=False) as client:
+                response = await client.post(
+                    f"{base}/chat/completions",
+                    headers={"Authorization": f"Bearer {api_key}"},
+                    json={
+                        "model": model,
+                        "messages": [{"role": "user", "content": prompt}],
+                        "temperature": 0,
+                        "response_format": {"type": "json_object"},
+                    },
+                )
+                response.raise_for_status()
+                content = response.json()["choices"][0]["message"]["content"]
+                return _parse_json_object(content)
+        except (httpx.HTTPError, ValueError, KeyError, TypeError):
+            return None
+    if provider != "ollama":
+        return None
+
     base = settings.BRIDGE_LLM_URL.strip().rstrip("/")
     model = settings.BRIDGE_LLM_MODEL.strip()
     if not base or not model:
@@ -82,8 +135,7 @@ async def _local_json(prompt: str) -> dict | None:
                       "options": {"temperature": 0}},
             )
             response.raise_for_status()
-            verdict = json.loads(response.json()["response"])
-            return verdict if isinstance(verdict, dict) else None
+            return _parse_json_object(response.json().get("response"))
     except (httpx.HTTPError, ValueError, KeyError, TypeError):
         return None
 

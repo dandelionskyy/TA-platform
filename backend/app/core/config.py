@@ -62,6 +62,9 @@ class Settings(BaseSettings):
     # generation/indexing rather than silently sending student text elsewhere.
     BRIDGE_LLM_URL: str = ""
     BRIDGE_LLM_MODEL: str = ""
+    BRIDGE_PROVIDER: str = "ollama"
+    BRIDGE_DEEPSEEK_BASE_URL: str = "https://api.deepseek.com"
+    BRIDGE_DEEPSEEK_MODEL: str = "deepseek-chat"
     BRIDGE_EMBEDDINGS_URL: str = ""
     BRIDGE_EMBEDDINGS_MODEL: str = "bge-m3"
     BRIDGE_ALLOW_LEXICAL_PROTOTYPE: bool = False

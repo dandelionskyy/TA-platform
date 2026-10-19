@@ -1,6 +1,15 @@
 version: '3.8'
 
 services:
+  ollama:
+    image: ollama/ollama:latest
+    profiles: ["ollama"]
+    restart: unless-stopped
+    expose:
+      - "11434"
+    volumes:
+      - ollama_data:/root/.ollama
+
   postgres:
     image: postgres:15-alpine
     container_name: ta-postgres
@@ -52,6 +61,9 @@ services:
       ROBOT_AUTH_KEYS: ${ROBOT_AUTH_KEYS:?Set ROBOT_AUTH_KEYS in .env}
       BRIDGE_LLM_URL: ${BRIDGE_LLM_URL:-}
       BRIDGE_LLM_MODEL: ${BRIDGE_LLM_MODEL:-}
+      BRIDGE_PROVIDER: ${BRIDGE_PROVIDER:-ollama}
+      BRIDGE_DEEPSEEK_BASE_URL: ${BRIDGE_DEEPSEEK_BASE_URL:-https://api.deepseek.com}
+      BRIDGE_DEEPSEEK_MODEL: ${BRIDGE_DEEPSEEK_MODEL:-deepseek-chat}
       BRIDGE_EMBEDDINGS_URL: ${BRIDGE_EMBEDDINGS_URL:-}
       BRIDGE_EMBEDDINGS_MODEL: ${BRIDGE_EMBEDDINGS_MODEL:-bge-m3}
       BRIDGE_ALLOW_LEXICAL_PROTOTYPE: ${BRIDGE_ALLOW_LEXICAL_PROTOTYPE:-false}
@@ -96,3 +108,4 @@ volumes:
   pgdata:
   redisdata:
   uploads:
+  ollama_data:
