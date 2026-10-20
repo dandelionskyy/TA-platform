@@ -5,7 +5,7 @@ This package adds the BRIDGE web tutor and teacher tools to the supplied TA Plat
 ## Put the files on the server
 
 1. Replace the deployed project with the contents of this ZIP, keeping your existing database volume and the server-side uploads volume. Make a backup before applying a schema migration. The ZIP contains source and built `frontend/dist` assets. Do not copy an old `.env` into a public folder.
-2. Copy `.env.example` to `.env` on the server. Fill in strong `DB_PASSWORD`, `JWT_SECRET` and `ROBOT_AUTH_KEYS`; set `CORS_ORIGINS` to the actual HTTPS origin. The prior platform's DeepSeek key is independent of BRIDGE.
+2. On a new installation, copy `.env.example` to `.env` on the server. On an existing installation, preserve its `.env` and add only the missing settings. Fill in strong `DB_PASSWORD`, `JWT_SECRET` and `ROBOT_AUTH_KEYS`; set `CORS_ORIGINS` to the actual HTTPS origin. BRIDGE uses the existing `DEEPSEEK_API_KEY` only when `BRIDGE_PROVIDER=deepseek` is explicitly selected.
 3. Run an institution-approved multilingual embedding service exposing an Ollama-compatible `POST /api/embed` endpoint and an institution-approved local generation service exposing `POST /api/generate`. Configure `BRIDGE_EMBEDDINGS_URL` with the **full** endpoint, for example `http://model-server:11434/api/embed`; configure `BRIDGE_EMBEDDINGS_MODEL=bge-m3`, `BRIDGE_LLM_URL` with the service base URL, and `BRIDGE_LLM_MODEL` with an installed bilingual model name. Ensure the backend container can reach these internal URLs. The model server, installed model weights and university approval are not in the ZIP. Keep `BRIDGE_ALLOW_LEXICAL_PROTOTYPE=false` for real use.
 
 The generation provider is switchable through `BRIDGE_PROVIDER`. Use `ollama` (the default) with `BRIDGE_LLM_URL` and `BRIDGE_LLM_MODEL` for local or institution-hosted Ollama. Use `deepseek` with `DEEPSEEK_API_KEY`, `BRIDGE_DEEPSEEK_BASE_URL` and `BRIDGE_DEEPSEEK_MODEL` when generation should use the DeepSeek chat API. DeepSeek is a generation provider only; retrieval still requires the separate multilingual `BRIDGE_EMBEDDINGS_URL` service. Do not enable a module until both material processing and a real tutor reply have been verified.
@@ -45,3 +45,62 @@ The supplied code and automated tests demonstrate the main flows but **do not ce
 - **Minerva and WeChat:** deliberately omitted. They must use this same guarded tutor endpoint with trusted server-side assessment context if added later.
 
 Run local checks from the project root with `PYTHONPATH=backend python -m pytest -q backend/tests` and `cd frontend && npm ci && npm run build`. Configure a test database as appropriate; do not put a production `.env` or source documents into the test ZIP.
+
+## Small ECS model deployment and switching
+
+The optional `ollama` Compose profile is for a small pilot. Its defaults cap the
+service at two CPU cores and 4 GiB memory, with one parallel inference request,
+two loaded models and a four-request queue. No model port is published publicly.
+These caps protect the website; they are not evidence of capacity for hundreds
+of concurrent students.
+
+For the container deployment, run `docker compose --profile ollama up -d ollama`,
+then use `docker compose exec ollama ollama pull qwen2.5:1.5b` and
+`docker compose exec ollama ollama pull bge-m3`. Configure:
+
+```dotenv
+BRIDGE_PROVIDER=ollama
+BRIDGE_LLM_URL=http://ollama:11434
+BRIDGE_LLM_MODEL=qwen2.5:1.5b
+BRIDGE_EMBEDDINGS_URL=http://ollama:11434/api/embed
+BRIDGE_EMBEDDINGS_MODEL=bge-m3
+BRIDGE_LLM_TIMEOUT_SECONDS=12
+BRIDGE_TURN_TIMEOUT_SECONDS=35
+```
+
+If the official container image cannot be pulled, an existing host Ollama service
+can be used instead. Find this project's bridge gateway with
+`docker network inspect ta-platform_default --format '{{range .IPAM.Config}}{{.Gateway}}{{end}}'`.
+Bind Ollama only to that private gateway, set the same queue and model limits, and
+apply `CPUQuota=200%`, `MemoryHigh=3G`, `MemoryMax=4G` in its systemd override.
+Order the service after Docker. Use that gateway in both URLs above. Do not use
+`0.0.0.0` or open TCP 11434 in the ECS security group. Recheck the address if the
+Docker network is recreated. Set `OLLAMA_NO_CLOUD=1` for this local-only service.
+
+To use DeepSeek generation, edit only these server-side settings, keeping the
+embedding URL and model unchanged:
+
+```dotenv
+BRIDGE_PROVIDER=deepseek
+BRIDGE_DEEPSEEK_BASE_URL=https://api.deepseek.com
+BRIDGE_DEEPSEEK_MODEL=deepseek-chat
+```
+
+Set a valid `DEEPSEEK_API_KEY` privately on the server, then rebuild/recreate the
+backend with `docker compose up -d --no-deps --build backend`. Reload Nginx after
+the backend is healthy so its upstream address is refreshed. Switching back only
+requires `BRIDGE_PROVIDER=ollama` and another backend recreation. This is an
+explicit provider choice, with no automatic transmission to a second provider
+on errors. DeepSeek receives question text and the retrieved source excerpts;
+local embeddings remain necessary for ingestion and retrieval.
+
+Each model call has a configurable wall timeout (1–30 seconds); the whole tutor
+turn has a separate 5–40 second deadline, default 35. A timed-out turn rolls back
+its pending learning-state changes and returns HTTP 503 with `Retry-After`.
+Missing credentials, provider errors, invalid/empty JSON and truncated model
+output are rejected. Existing deterministic safety checks remain in force.
+
+Before inviting students, use a separate test module to verify a real document
+reaches `ready`, review its safe chunks, and check English and Chinese tutor
+replies. Record latency and RAM usage. A passing provider contract test does not
+establish real model quality, API quota, campus load capacity or course readiness.

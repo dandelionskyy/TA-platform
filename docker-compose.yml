@@ -5,6 +5,14 @@ services:
     image: ollama/ollama:latest
     profiles: ["ollama"]
     restart: unless-stopped
+    cpus: "${BRIDGE_OLLAMA_CPUS:-2}"
+    mem_limit: ${BRIDGE_OLLAMA_MEMORY:-4g}
+    environment:
+      OLLAMA_NUM_PARALLEL: "1"
+      OLLAMA_MAX_LOADED_MODELS: "2"
+      OLLAMA_MAX_QUEUE: "4"
+      OLLAMA_CONTEXT_LENGTH: "2048"
+      OLLAMA_NO_CLOUD: "1"
     expose:
       - "11434"
     volumes:
@@ -64,6 +72,8 @@ services:
       BRIDGE_PROVIDER: ${BRIDGE_PROVIDER:-ollama}
       BRIDGE_DEEPSEEK_BASE_URL: ${BRIDGE_DEEPSEEK_BASE_URL:-https://api.deepseek.com}
       BRIDGE_DEEPSEEK_MODEL: ${BRIDGE_DEEPSEEK_MODEL:-deepseek-chat}
+      BRIDGE_LLM_TIMEOUT_SECONDS: ${BRIDGE_LLM_TIMEOUT_SECONDS:-12}
+      BRIDGE_TURN_TIMEOUT_SECONDS: ${BRIDGE_TURN_TIMEOUT_SECONDS:-35}
       BRIDGE_EMBEDDINGS_URL: ${BRIDGE_EMBEDDINGS_URL:-}
       BRIDGE_EMBEDDINGS_MODEL: ${BRIDGE_EMBEDDINGS_MODEL:-bge-m3}
       BRIDGE_ALLOW_LEXICAL_PROTOTYPE: ${BRIDGE_ALLOW_LEXICAL_PROTOTYPE:-false}

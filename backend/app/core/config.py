@@ -1,6 +1,6 @@
 import os
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from pydantic import field_validator
+from pydantic import Field, field_validator
 from functools import lru_cache
 
 # Find project root (where .env lives) relative to this file
@@ -58,13 +58,15 @@ class Settings(BaseSettings):
     MAX_CONTEXT_CHARS: int = 24000
     SEED_DEMO_DATA: bool = False
 
-    # BRIDGE uses institution-controlled model endpoints. Blank URLs disable
-    # generation/indexing rather than silently sending student text elsewhere.
+    # Ollama is the default. Cloud generation requires explicitly choosing
+    # deepseek; the embedding endpoint remains independently configured.
     BRIDGE_LLM_URL: str = ""
     BRIDGE_LLM_MODEL: str = ""
     BRIDGE_PROVIDER: str = "ollama"
     BRIDGE_DEEPSEEK_BASE_URL: str = "https://api.deepseek.com"
     BRIDGE_DEEPSEEK_MODEL: str = "deepseek-chat"
+    BRIDGE_LLM_TIMEOUT_SECONDS: float = Field(default=12, ge=1, le=30)
+    BRIDGE_TURN_TIMEOUT_SECONDS: float = Field(default=35, ge=5, le=40)
     BRIDGE_EMBEDDINGS_URL: str = ""
     BRIDGE_EMBEDDINGS_MODEL: str = "bge-m3"
     BRIDGE_ALLOW_LEXICAL_PROTOTYPE: bool = False

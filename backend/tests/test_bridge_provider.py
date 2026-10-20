@@ -26,7 +26,7 @@ def test_deepseek_provider_uses_chat_completions(monkeypatch):
             return None
 
         def json(self):
-            return {"choices": [{"message": {"content": '{"response":"ok"}'}}]}
+            return {"choices": [{"finish_reason": "stop", "message": {"content": '{"response":"ok"}'}}]}
 
     class FakeClient:
         async def __aenter__(self):

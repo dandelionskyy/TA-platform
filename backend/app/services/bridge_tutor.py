@@ -1,6 +1,6 @@
 """BRIDGE's web tutor. Never delegates policy decisions to an LLM.
 
-The optional institution-hosted Ollama adapter grades explain-back attempts.
+The explicitly selected model provider grades explain-back attempts.
 All student answers pass the independent, deterministic policy verifier. Chat
 text is never stored; only concept/state events are persisted.
 """
@@ -75,14 +75,7 @@ def _parse_json_object(raw: object) -> dict | None:
         value = json.loads(text)
         return value if isinstance(value, dict) else None
     except (TypeError, ValueError):
-        start, end = text.find("{"), text.rfind("}")
-        if start < 0 or end <= start:
-            return None
-        try:
-            value = json.loads(text[start:end + 1])
-            return value if isinstance(value, dict) else None
-        except (TypeError, ValueError):
-            return None
+        return None
 
 
 async def _local_json(prompt: str) -> dict | None:
@@ -100,8 +93,14 @@ async def _local_json(prompt: str) -> dict | None:
         model = settings.BRIDGE_DEEPSEEK_MODEL.strip() or "deepseek-chat"
         if not api_key or not base:
             return None
+        parsed = urlparse(base)
+        if (parsed.scheme != "https" or not parsed.hostname or parsed.username
+                or parsed.password or parsed.query or parsed.fragment):
+            return None
         try:
-            async with httpx.AsyncClient(timeout=30.0, trust_env=False) as client:
+            async with asyncio.timeout(settings.BRIDGE_LLM_TIMEOUT_SECONDS), httpx.AsyncClient(
+                timeout=settings.BRIDGE_LLM_TIMEOUT_SECONDS, trust_env=False,
+            ) as client:
                 response = await client.post(
                     f"{base}/chat/completions",
                     headers={"Authorization": f"Bearer {api_key}"},
@@ -109,13 +108,19 @@ async def _local_json(prompt: str) -> dict | None:
                         "model": model,
                         "messages": [{"role": "user", "content": prompt}],
                         "temperature": 0,
+                        "max_tokens": 768,
+                        "stream": False,
                         "response_format": {"type": "json_object"},
                     },
                 )
                 response.raise_for_status()
-                content = response.json()["choices"][0]["message"]["content"]
+                choice = response.json()["choices"][0]
+                if choice.get("finish_reason") != "stop":
+                    return None
+                content = choice["message"]["content"]
                 return _parse_json_object(content)
-        except (httpx.HTTPError, ValueError, KeyError, TypeError):
+        except (httpx.HTTPError, TimeoutError, ValueError, KeyError, TypeError,
+                IndexError, AttributeError):
             return None
     if provider != "ollama":
         return None
@@ -128,15 +133,20 @@ async def _local_json(prompt: str) -> dict | None:
     if parsed.scheme not in {"http", "https"} or not parsed.hostname:
         return None
     try:
-        async with httpx.AsyncClient(timeout=12.0, trust_env=False) as client:
+        async with asyncio.timeout(settings.BRIDGE_LLM_TIMEOUT_SECONDS), httpx.AsyncClient(
+            timeout=settings.BRIDGE_LLM_TIMEOUT_SECONDS, trust_env=False,
+        ) as client:
             response = await client.post(
                 f"{base}/api/generate",
                 json={"model": model, "prompt": prompt, "stream": False, "format": "json",
-                      "options": {"temperature": 0}},
+                      "options": {"temperature": 0, "num_predict": 768}},
             )
             response.raise_for_status()
-            return _parse_json_object(response.json().get("response"))
-    except (httpx.HTTPError, ValueError, KeyError, TypeError):
+            payload = response.json()
+            if payload.get("done") is not True or payload.get("done_reason") == "length":
+                return None
+            return _parse_json_object(payload.get("response"))
+    except (httpx.HTTPError, TimeoutError, ValueError, KeyError, TypeError, AttributeError):
         return None
 
 
