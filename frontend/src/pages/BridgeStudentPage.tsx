@@ -224,8 +224,9 @@ export default function BridgeStudentPage() {
     } catch (error) {
       if (controller.signal.aborted && inFlightRef.current !== controller && !cancelledRef.current) return;
       if (cancelledRef.current) {
+        setAvatar('uncertain');
         append('notice', noticeText('cancelled', language), undefined, 'cancelled');
-        setRetryMessage(null);
+        setRetryMessage(message);
         return;
       }
       setAvatar('uncertain');
