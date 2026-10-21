@@ -419,8 +419,11 @@ async def run_guarded_tutor(
         raise ValueError("Module is unavailable")
 
     flagged = assessment_intent(message)
-    if not flagged and not session.assessment_locked and not module.assessment_locked:
-        flagged = (await _local_assessment_check(message)) is True
+    # Keep the lock decision deterministic.  A small local model can help
+    # draft tutor text, but it is too prone to false positives on phrases such
+    # as “I am ready to continue” to decide whether ordinary study is graded.
+    # Explicit assessment cues are handled by assessment_intent above; staff
+    # can also lock a module or session directly.
     # A detected assessment context stays locked for the session. Changing
     # client language or asking for a direct answer cannot remove the lock.
     if flagged:
