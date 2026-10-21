@@ -21,9 +21,15 @@ async def _bridge_retention_loop():
     while True:
         try:
             async with AsyncSessionFactory() as db:
-                while await purge_expired_sessions(db):
+                purged = 0
+                while True:
+                    batch = await purge_expired_sessions(db)
+                    if not batch:
+                        break
+                    purged += batch
                     await db.commit()
                 await db.commit()
+                logger.info("BRIDGE session retention completed: purged_sessions=%s", purged)
         except Exception:
             logger.exception("BRIDGE session expiry failed; will retry")
         await asyncio.sleep(24 * 60 * 60)

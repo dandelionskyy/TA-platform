@@ -8,6 +8,7 @@ text is never stored; only concept/state events are persisted.
 import asyncio
 import json
 import re
+from difflib import SequenceMatcher
 from urllib.parse import urlparse
 
 import httpx
@@ -44,12 +45,24 @@ _STOPWORDS = {
 
 def _can_be_explanation(message: str, evidence: str, language: str) -> bool:
     """Reject short agreement, copied context and unsupported assertions."""
-    if len(message.strip()) < 70:
+    normalized_message = re.sub(r"[\s\W_]+", "", message.casefold())
+    normalized_evidence = re.sub(r"[\s\W_]+", "", evidence.casefold())
+    if len(message.strip()) < 70 or len(normalized_message) < 25:
+        return False
+    # A student may use key terms, but pasting the source verbatim is not an
+    # explanation.  This deterministic check covers Chinese text as well as
+    # English text before the optional local evaluator is consulted.
+    if normalized_evidence and (
+        normalized_evidence in normalized_message
+        or SequenceMatcher(None, normalized_message, normalized_evidence[:len(normalized_message)]).ratio() >= 0.78
+    ):
         return False
     if language == "zh":
-        # Chinese word segmentation is handled by the optional local model;
-        # a deterministic fallback does not confidently award mastery here.
-        return False
+        source_han = set(re.findall(r"[\u3400-\u9fff]", evidence))
+        message_han = set(re.findall(r"[\u3400-\u9fff]", message))
+        # Keep the model as the semantic judge, but require the answer to
+        # engage with at least a few source concepts instead of generic prose.
+        return len(message_han) >= 12 and len(source_han & message_han) >= 2
     tokens = {t.lower() for t in _WORD.findall(evidence)} - _STOPWORDS
     attempted = {t.lower() for t in _WORD.findall(message)} - _STOPWORDS
     if len(tokens) < 3 and len(re.findall(r"[\u3400-\u9fff]", evidence)) >= 12:

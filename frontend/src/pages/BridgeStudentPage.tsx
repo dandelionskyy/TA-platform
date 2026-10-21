@@ -15,6 +15,22 @@ interface ChatLine {
   welcomeLanguage?: 'en' | 'zh';
   groundingStatus?: GroundingStatus;
   sources?: BridgeSource[];
+  noticeCode?: NoticeCode;
+}
+
+type NoticeCode = 'resume' | 'busy' | 'module_unavailable' | 'offline' | 'timeout' | 'cancelled' | 'generic';
+
+function noticeText(code: NoticeCode, language: 'en' | 'zh'): string {
+  const values: Record<NoticeCode, [string, string]> = {
+    resume: ['匿名学习进度已恢复。你可以继续提问。', 'Your anonymous learning progress is available. You can continue asking questions.'],
+    busy: ['助教现在较忙。请稍后重试。', 'The assistant is busy. Please try again shortly.'],
+    module_unavailable: ['该课程模块暂时不可用。请刷新模块列表。', 'This module is unavailable. Please refresh the module list.'],
+    offline: ['连接中断。消息未确认送达，请重试。', 'Connection lost. Delivery was not confirmed; please retry.'],
+    timeout: ['处理时间过长。请尝试更简短的问题，或重试。', 'This took too long. Try a shorter question, or retry.'],
+    cancelled: ['已取消本次请求。你可以修改问题后重试。', 'Request cancelled. You can edit the question and try again.'],
+    generic: ['暂时无法回答。请稍后重试。', 'I cannot respond right now. Please try again.'],
+  };
+  return values[code][language === 'zh' ? 0 : 1];
 }
 
 function sessionKey(moduleId: string) { return `bridge-session:${moduleId}`; }
@@ -89,6 +105,7 @@ export default function BridgeStudentPage() {
   const sessionRef = useRef<BridgeSession | null>(null);
   const creatingRef = useRef<Promise<BridgeSession> | null>(null);
   const inFlightRef = useRef<AbortController | null>(null);
+  const cancelledRef = useRef(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
   const seqRef = useRef(0);
   const module = modules.find(entry => entry.id === moduleId);
@@ -98,8 +115,8 @@ export default function BridgeStudentPage() {
   const personalizedLines = namedAssistantLines(lines, studentName);
 
   const nextId = () => ++seqRef.current;
-  const append = (kind: ChatLine['kind'], content: string, reply?: BridgeTutorReply) => {
-    setLines(current => [...current, { id: nextId(), kind, content, reply }]);
+  const append = (kind: ChatLine['kind'], content: string, reply?: BridgeTutorReply, noticeCode?: NoticeCode) => {
+    setLines(current => [...current, { id: nextId(), kind, content, reply, noticeCode }]);
   };
 
   const loadModules = useCallback(async () => {
@@ -131,7 +148,7 @@ export default function BridgeStudentPage() {
     inFlightRef.current?.abort();
     inFlightRef.current = null;
     if (cached) {
-      setLines([{ id: nextId(), kind: 'notice', content: language === 'zh' ? '匿名学习进度已恢复。你可以继续提问。' : 'Your anonymous learning progress is available. You can continue asking questions.' }]);
+      setLines([{ id: nextId(), kind: 'notice', content: noticeText('resume', language), noticeCode: 'resume' }]);
     } else if (moduleId) {
       const opening = bridgeApi.createSession(moduleId, language);
       creatingRef.current = opening;
@@ -175,6 +192,7 @@ export default function BridgeStudentPage() {
     setDraft(''); setRetryMessage(null);
     if (!navigator.onLine) { setQueued(message); setOnline(false); return; }
     setQueued(null); setBusy(true); setAvatar('thinking');
+    cancelledRef.current = false;
     setThinkingHint(text('正在查看课程资料…', 'Checking the module materials…'));
     const controller = new AbortController();
     inFlightRef.current = controller;
@@ -197,20 +215,26 @@ export default function BridgeStudentPage() {
       append('assistant', reply.response, reply);
       setAvatar(normalizeAvatarState(reply.avatar_state));
       setAssessmentLocked(reply.lock_status);
+      if (sessionRef.current) {
+        const updated = { ...sessionRef.current, language: reply.language, lock_status: reply.lock_status,
+          stage: reply.stage, avatar_state: reply.avatar_state };
+        sessionRef.current = updated;
+        localStorage.setItem(sessionKey(moduleId), JSON.stringify(updated));
+      }
     } catch (error) {
-      if (controller.signal.aborted && inFlightRef.current !== controller) return;
+      if (controller.signal.aborted && inFlightRef.current !== controller && !cancelledRef.current) return;
+      if (cancelledRef.current) {
+        append('notice', noticeText('cancelled', language), undefined, 'cancelled');
+        setRetryMessage(null);
+        return;
+      }
       setAvatar('uncertain');
       const status = error instanceof BridgeApiError ? error.status : -1;
-      const note = status === 429 || status === 503
-        ? text('助教现在较忙。请稍后重试。', 'The assistant is busy. Please try again shortly.')
-        : status === 403 || status === 404
-          ? text('该课程模块暂时不可用。请刷新模块列表。', 'This module is unavailable. Please refresh the module list.')
-          : status === 0 || !navigator.onLine
-            ? text('连接中断。消息未确认送达，请重试。', 'Connection lost. Delivery was not confirmed; please retry.')
-            : controller.signal.aborted
-              ? text('处理时间过长。请尝试更简短的问题，或重试。', 'This took too long. Try a shorter question, or retry.')
-              : text('暂时无法回答。请稍后重试。', 'I cannot respond right now. Please try again.');
-      append('notice', note);
+      const code: NoticeCode = status === 429 || status === 503
+        ? 'busy' : status === 403 || status === 404
+          ? 'module_unavailable' : status === 0 || !navigator.onLine
+            ? 'offline' : controller.signal.aborted ? 'timeout' : 'generic';
+      append('notice', noticeText(code, language), undefined, code);
       setRetryMessage(message);
     } finally {
       timers.forEach(window.clearTimeout);
@@ -267,7 +291,13 @@ export default function BridgeStudentPage() {
         <label className="bridge-label" htmlFor="bridge-preferred-name">{text('希望我怎么称呼你？（选填）', 'What should I call you? (optional)')}</label>
         <input id="bridge-preferred-name" className="bridge-control" value={preferredName} maxLength={40} autoComplete="off"
           aria-describedby="bridge-name-help" placeholder={text('例如：小明', 'For example: Ming')}
-          onChange={event => setPreferredName(event.target.value)} />
+          onChange={event => setPreferredName(event.target.value)}
+          onPaste={event => {
+            const pasted = event.clipboardData.getData('text');
+            if (Array.from(pasted.normalize('NFKC').replace(/[\p{Cc}\p{Cf}]/gu, '').replace(/\s+/g, ' ').trim()).length > 40) {
+              event.preventDefault(); setPreferredName('');
+            }
+          }} />
         <p id="bridge-name-help" className="bridge-small">{text('留空时，已登录学生使用账号显示姓名；访客则不显示姓名。这里填写的称呼仅保留在本页，不会通过匿名辅导接口发送。账号姓名仍由原有账户服务保存。', 'Signed-in students can leave this blank to use their account display name. Visitors remain unnamed unless they enter one. A preferred name typed here stays on this page; neither name is sent in anonymous tutor requests. Your account name remains with the existing account service.')}</p>
         {moduleError && <p role="alert" className="bridge-error">{moduleError} <button type="button" onClick={() => { void loadModules(); setSessionAttempt(value => value + 1); }}>{text('重试', 'Retry')}</button></p>}
         {assessmentLocked && <p className="bridge-lock" role="status">{text('考核时段：仅提供提示和新的练习题。', 'Assessment window: hints and new practice questions only.')}</p>}
@@ -278,16 +308,16 @@ export default function BridgeStudentPage() {
         <div className="bridge-chat-heading"><h2>{module?.title || text('选择一个课程模块', 'Choose a module')}</h2><p>{text('依据所选模块的资料学习', 'Learn from the selected module materials')}</p></div>
         <div className="bridge-dialogue" role="log" aria-live="polite" aria-relevant="additions" aria-label={text('对话消息', 'Conversation messages')}>
           {lines.length === 0 && <div className="bridge-welcome"><h3>{text('你想学习什么？', 'What would you like to learn?')}</h3><p>{text('描述你正在做的题目或不理解的概念。我会先了解你的想法。', 'Describe the topic or problem you are working on. I will start by asking about your thinking.')}</p></div>}
-          {lines.map(line => <article key={line.id} className={`bridge-message bridge-message--${line.kind}`}>
+          {lines.map(line => <article key={line.id} role={line.kind === 'notice' ? 'alert' : undefined} className={`bridge-message bridge-message--${line.kind}`}>
             <div className="bridge-speaker">{line.kind === 'student' ? text('你', 'You') : line.kind === 'assistant' ? 'BRIDGE' : text('提示', 'Notice')}</div>
-            {line.reply?.stage && <span className="bridge-stage">{stageLabel(line.reply.stage, language)}</span>}
+            {(line.reply?.stage || line.welcomeLanguage) && <span className="bridge-stage">{stageLabel(line.reply?.stage || 'greeting', language)}</span>}
             <p className="bridge-message-text">{personalizedLines.has(line.id) && line.welcomeLanguage
               ? <>{line.welcomeLanguage === 'zh' ? `你好，${studentName}！` : `Hello, ${studentName}!`}{line.content.slice(line.welcomeLanguage === 'zh' ? '你好！'.length : 'Hello!'.length)}</>
-              : <>{personalizedLines.has(line.id) && line.reply && <>{studentName}{line.reply.language === 'zh' ? '，' : ', '}</>}{line.content}</>}</p>
+              : <>{personalizedLines.has(line.id) && line.reply && <>{studentName}{line.reply.language === 'zh' ? '，' : ', '}</>}{line.noticeCode ? noticeText(line.noticeCode, language) : line.content}</>}</p>
             {line.reply?.practice && <div className="bridge-practice"><strong>{text('练习题', 'Practice question')}</strong><p>{line.reply.practice}</p></div>}
             {(line.reply || line.groundingStatus) && <BridgeEvidence status={line.reply?.grounding_status || line.groundingStatus || 'INSUFFICIENT EVIDENCE'} sources={line.reply?.sources || line.sources || []} language={language} />}
           </article>)}
-          {busy && <div className="bridge-wait" role="status"><span className="bridge-wait-dot" aria-hidden="true" />{thinkingHint}<button type="button" onClick={() => inFlightRef.current?.abort()}>{text('取消', 'Cancel')}</button></div>}
+          {busy && <div className="bridge-wait" role="status"><span className="bridge-wait-dot" aria-hidden="true" />{thinkingHint}<button type="button" onClick={() => { cancelledRef.current = true; inFlightRef.current?.abort(); }}>{text('取消', 'Cancel')}</button></div>}
           {queued && <div className="bridge-queued" role="status">{text('消息将在连接恢复后发送。', 'Message will be sent when the connection is restored.')} <button type="button" onClick={() => setQueued(null)}>{text('取消', 'Cancel')}</button></div>}
           {retryMessage && !busy && !queued && <button type="button" className="bridge-button" onClick={() => void send(retryMessage, false)}>{text('重试上一条消息', 'Retry the last message')}</button>}
           <div ref={chatEndRef} />

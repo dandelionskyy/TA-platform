@@ -1,0 +1,4 @@
+# Daily UTC backup of PostgreSQL and uploaded course files. Install with:
+#   sudo install -m 0755 ops/backup_database.sh /usr/local/sbin/ta-platform-backup
+#   (sudo crontab -l 2>/dev/null; echo '17 2 * * * /usr/local/sbin/ta-platform-backup >> /var/log/ta-platform-backup.log 2>&1') | sudo crontab -
+17 2 * * * /usr/local/sbin/ta-platform-backup >> /var/log/ta-platform-backup.log 2>&1

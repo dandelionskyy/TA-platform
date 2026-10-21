@@ -135,7 +135,7 @@
   .bridge-layout { grid-template-columns: 1fr; }
   .bridge-side { border-right: 0; border-bottom: 1px solid var(--bridge-border); display: grid; grid-template-columns: auto 1fr; gap: 8px 15px; padding: 13px 17px; }
   .bridge-avatar { grid-row: span 4; width: 115px; }
-  .bridge-avatar-figure { transform: scale(.65); transform-origin: top center; height: 107px; margin-bottom: -55px; }
+  .bridge-avatar-figure { transform: scale(.65); transform-origin: top center; height: 107px; margin-bottom: 0; }
   .bridge-avatar-caption { font-size: .7rem; }
   .bridge-intro { margin: 0; font-size: .82rem; }
   .bridge-side .bridge-small, .bridge-side .bridge-lock, .bridge-side .bridge-error { grid-column: 1 / -1; }
