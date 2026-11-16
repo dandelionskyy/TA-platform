@@ -52,6 +52,12 @@ def _ensure_legacy_columns(sync_conn):
     additions = {
         "users": {"last_login_at": "DATETIME"},
         "conversations": {"chapter_id": "VARCHAR(36)"},
+        "messages": {
+            "prompt_tokens": "INTEGER",
+            "completion_tokens": "INTEGER",
+            "model_name": "VARCHAR(100)",
+            "response_time_ms": "INTEGER",
+        },
         "file_assets": {
             "stored_path": "VARCHAR(500)",
             "extracted_text": "TEXT DEFAULT ''",

@@ -214,8 +214,8 @@ class ApiClient {
   }
 
   // Teacher
-  getStudents(search = '', page = 1) {
-    return this.request<any>(`/teacher/students?search=${encodeURIComponent(search)}&page=${page}`);
+  getStudents(search = '', page = 1, pageSize = 50, courseId = '') {
+    return this.request<any>(`/teacher/students?search=${encodeURIComponent(search)}&page=${page}&page_size=${pageSize}&course_id=${encodeURIComponent(courseId)}`);
   }
 
   getStudentConversations(studentId: string, page = 1) {

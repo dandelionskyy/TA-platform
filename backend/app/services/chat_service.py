@@ -2,6 +2,7 @@ from pathlib import Path
 from typing import Optional, List, Dict
 import os
 import uuid
+from time import perf_counter
 
 import aiofiles
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -152,12 +153,20 @@ async def student_can_use_course(db: AsyncSession, user_id: str, course_id: str)
 async def save_message(
     db: AsyncSession, conversation_id: str, role: str, content: str,
     context_source: Optional[str] = None, filename_ref: Optional[str] = None,
+    token_count: Optional[int] = None, prompt_tokens: Optional[int] = None,
+    completion_tokens: Optional[int] = None, model_name: Optional[str] = None,
+    response_time_ms: Optional[int] = None,
 ) -> Message:
     msg = Message(
         id=str(uuid.uuid4()),
         conversation_id=conversation_id,
         role=role,
         content=content,
+        token_count=token_count,
+        prompt_tokens=prompt_tokens,
+        completion_tokens=completion_tokens,
+        model_name=model_name,
+        response_time_ms=response_time_ms,
         context_source=context_source,
         filename_ref=filename_ref,
     )
@@ -255,6 +264,7 @@ async def process_chat(
     await conversation_memory.add_message(conv.id, "user", message)
 
     # Get AI response
+    started = perf_counter()
     ai_result = await get_deepseek_response(
         user_question=message,
         mode=mode,
@@ -274,6 +284,11 @@ async def process_chat(
         db, conv.id, "assistant", ai_result["response"],
         context_source=ai_result.get("context_source"),
         filename_ref=ai_result.get("filename_display"),
+        token_count=(ai_result.get("usage") or {}).get("total_tokens"),
+        prompt_tokens=(ai_result.get("usage") or {}).get("prompt_tokens"),
+        completion_tokens=(ai_result.get("usage") or {}).get("completion_tokens"),
+        model_name=ai_result.get("model_name"),
+        response_time_ms=round((perf_counter() - started) * 1000),
     )
     await conversation_memory.add_message(conv.id, "assistant", ai_result["response"])
 
@@ -355,6 +370,10 @@ async def get_conversation_messages(
                 "content": m.content,
                 "context_source": m.context_source,
                 "created_at": m.created_at.isoformat() if m.created_at else None,
+                "token_count": m.token_count,
+                "prompt_tokens": m.prompt_tokens,
+                "completion_tokens": m.completion_tokens,
+                "model_name": m.model_name,
             }
             for m in messages
         ],

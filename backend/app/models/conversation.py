@@ -28,6 +28,10 @@ class Message(Base):
     role: Mapped[str] = mapped_column(String(10), nullable=False)  # user, assistant, system
     content: Mapped[str] = mapped_column(Text, nullable=False)
     token_count: Mapped[int] = mapped_column(Integer, nullable=True)
+    prompt_tokens: Mapped[int] = mapped_column(Integer, nullable=True)
+    completion_tokens: Mapped[int] = mapped_column(Integer, nullable=True)
+    model_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    response_time_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
     context_source: Mapped[str] = mapped_column(String(50), nullable=True)  # txt, pdf, manual_file, none
     filename_ref: Mapped[str] = mapped_column(String(500), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

@@ -5,6 +5,7 @@ import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
 import StudentPage from './pages/StudentPage';
 import TeacherPage from './pages/TeacherPage';
+import TeacherStudentsPage from './pages/TeacherStudentsPage';
 import TAPage from './pages/TAPage';
 import { StudentAssignmentsPage, StaffAssignmentsPage } from './pages/AssignmentsPage';
 import { StudentAttendancePage, StaffAttendancePage } from './pages/AttendancePage';
@@ -49,6 +50,7 @@ export default function App() {
       <Route path="/student/announcements" element={<ProtectedRoute roles={['student']}><AnnouncementsPage role="student" /></ProtectedRoute>} />
       <Route path="/student/messages" element={<ProtectedRoute roles={['student']}><MessagingPage role="student" /></ProtectedRoute>} />
       <Route path="/teacher" element={<ProtectedRoute roles={['teacher']}><TeacherPage /></ProtectedRoute>} />
+      <Route path="/teacher/students" element={<ProtectedRoute roles={['teacher']}><TeacherStudentsPage /></ProtectedRoute>} />
       <Route path="/teacher/assignments" element={<ProtectedRoute roles={['teacher']}><StaffAssignmentsPage role="teacher" /></ProtectedRoute>} />
       <Route path="/teacher/attendance" element={<ProtectedRoute roles={['teacher']}><StaffAttendancePage role="teacher" /></ProtectedRoute>} />
       <Route path="/teacher/announcements" element={<ProtectedRoute roles={['teacher']}><AnnouncementsPage role="teacher" /></ProtectedRoute>} />

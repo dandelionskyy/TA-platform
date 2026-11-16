@@ -6,27 +6,6 @@ import RobotMonitor from '../components/robot/RobotMonitor';
 import CourseMemberManager from '../components/shared/CourseMemberManager';
 import { LanguageToggle, useLanguage } from '../i18n/LanguageContext';
 
-interface Student {
-  id: string;
-  student_id: string;
-  display_name: string;
-  phone: string;
-  is_active: boolean;
-}
-
-interface Message {
-  id: string;
-  role: string;
-  content: string;
-  created_at: string;
-}
-
-interface Conversation {
-  id: string;
-  title: string;
-  updated_at: string;
-}
-
 interface Course {
   id: string;
   name: string;
@@ -34,14 +13,7 @@ interface Course {
 
 export default function TeacherPage() {
   const { user, logout } = useAuthStore();
-  const { text, locale } = useLanguage();
-  const [students, setStudents] = useState<Student[]>([]);
-  const [search, setSearch] = useState('');
-  const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
-  const [conversations, setConversations] = useState<Conversation[]>([]);
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [selectedConv, setSelectedConv] = useState<string | null>(null);
-  const [usage, setUsage] = useState<any>(null);
+  const { text } = useLanguage();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [dark, setDark] = useState(() => localStorage.getItem('theme') === 'dark');
   const [dashboard, setDashboard] = useState<any>(null);
@@ -58,46 +30,15 @@ export default function TeacherPage() {
   const [memberMessage, setMemberMessage] = useState('');
 
   useEffect(() => {
-    searchStudents();
     api.getTeacherDashboard().then(setDashboard).catch(() => {});
     api.getTeacherCourses().then(data => setCourses(data.courses || [])).catch(() => {});
   }, []);
-
-  const searchStudents = async () => {
-    try {
-      const data = await api.getStudents(search);
-      setStudents(data.students || []);
-    } catch {}
-  };
 
   const toggleDark = () => {
     const next = !dark;
     setDark(next);
     localStorage.setItem('theme', next ? 'dark' : 'light');
     document.documentElement.classList.toggle('dark', next);
-  };
-
-  const selectStudent = async (student: Student) => {
-    setSelectedStudent(student);
-    setSelectedConv(null);
-    setMessages([]);
-    try {
-      const [convData, usageData] = await Promise.all([
-        api.getStudentConversations(student.id),
-        api.getStudentUsage(student.id),
-      ]);
-      setConversations(convData.conversations || []);
-      setUsage(usageData);
-    } catch {}
-  };
-
-  const selectConversation = async (conversationId: string) => {
-    if (!selectedStudent) return;
-    setSelectedConv(conversationId);
-    try {
-      const data = await api.getStudentMessages(selectedStudent.id, conversationId);
-      setMessages(data.messages || []);
-    } catch {}
   };
 
   const createCourse = async () => {
@@ -122,7 +63,6 @@ export default function TeacherPage() {
       }
       setMember({ role: member.role, student_id: '', phone: '', password: '', display_name: '', course_id: member.course_id });
       setMemberMessage(text('账号已创建并分配课程。', 'Account created and assigned.'));
-      searchStudents();
     } catch (error: any) {
       setMemberMessage(error.message || text('无法创建账号。', 'Unable to create account.'));
     }
@@ -143,16 +83,6 @@ export default function TeacherPage() {
           <LanguageToggle />
         </div>
         <div className="px-2.5 py-3 text-xs text-[#9b9ca3]">{text('教师工作台', 'Teacher workspace')}</div>
-        <div className="mb-3 px-2.5">
-          <input
-            type="text"
-            value={search}
-            onChange={event => setSearch(event.target.value)}
-            onKeyDown={event => { if (event.key === 'Enter') searchStudents(); }}
-            placeholder={text('搜索学生...', 'Search students...')}
-            className="w-full rounded-md border border-white/20 bg-white/10 px-3 py-2 text-sm text-white outline-none placeholder-white/50"
-          />
-        </div>
         <div className="flex-1 overflow-y-auto">
           <div className="px-2.5 pb-2 pt-1 text-[11px] uppercase tracking-[.08em] text-[#9b9ca3]">{text('工作区', 'Workspace')}</div>
           <Link to="/teacher" className="block rounded-md px-3 py-2 text-sm text-white hover:bg-white/10">{text('教学概览', 'Overview')}</Link>
@@ -161,10 +91,7 @@ export default function TeacherPage() {
           <Link to="/teacher/attendance" className="block rounded-md px-3 py-2 text-sm text-white hover:bg-white/10">{text('考勤管理', 'Attendance')}</Link>
           <Link to="/teacher/announcements" className="block rounded-md px-3 py-2 text-sm text-white hover:bg-white/10">{text('课程通知', 'Announcements')}</Link>
           <Link to="/teacher/messages" className="block rounded-md px-3 py-2 text-sm text-white hover:bg-white/10">{text('师生沟通', 'Messages')}</Link>
-          {students.map(student => <button key={student.id} onClick={() => selectStudent(student)} className={`mt-1 block w-full rounded-md px-3 py-2.5 text-left text-sm text-white hover:bg-white/10 ${selectedStudent?.id === student.id ? 'bg-white/15' : ''}`}>
-            <div className="truncate">{student.display_name || student.student_id}</div>
-            <div className="text-xs text-[#9b9ca3]">{student.student_id}</div>
-          </button>)}
+          <Link to="/teacher/students" className="block rounded-md px-3 py-2 text-sm text-white hover:bg-white/10">{text('所有学生', 'All students')}</Link>
         </div>
         <div className="sidebar-footer">
           <button onClick={toggleDark} className="btn w-full border-white/20 bg-transparent text-sm text-white">{dark ? text('浅色主题', 'Light theme') : text('深色主题', 'Dark theme')}</button>
@@ -183,11 +110,11 @@ export default function TeacherPage() {
           <button className="btn ml-auto" onClick={logout}>{text('退出', 'Log out')}</button>
         </header>
         <div className="flex-1 space-y-6 p-4 md:p-7">
-          {!selectedStudent && <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
             {metricLabels.map(([label, value]) => <div className="panel metric" key={label}><div className="metric-value">{value}</div><div className="mt-1 text-xs muted">{label}</div></div>)}
-          </div>}
+          </div>
 
-          {!selectedStudent && <section className="panel p-5">
+          <section className="panel p-5">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
                 <h2 className="font-semibold">{text('课程管理', 'Courses')}</h2>
@@ -202,11 +129,11 @@ export default function TeacherPage() {
               {courses.map(course => <span key={course.id} className="rounded-md bg-[var(--bg-secondary)] px-3 py-2 text-sm">{course.name}</span>)}
               {courses.length === 0 && <span className="text-sm muted">{text('暂无课程。', 'No courses yet.')}</span>}
             </div>
-          </section>}
+          </section>
 
-          {!selectedStudent && <CourseMemberManager courses={courses} />}
+          <CourseMemberManager courses={courses} />
 
-          {!selectedStudent && <section className="panel p-5">
+          <section className="panel p-5">
             <h2 className="font-semibold">{text('创建账号并分配课程', 'Issue access')}</h2>
             <p className="mt-1 text-sm muted">{text('助教可以由教师创建；学生优先通过注册后在上方批量加入课程。', 'Create TA accounts here; students should register first and be added in bulk above.')}</p>
             <div className="mt-4 grid gap-2 md:grid-cols-3">
@@ -227,35 +154,9 @@ export default function TeacherPage() {
               <button className="btn-primary rounded-md px-3 py-2 text-sm" onClick={provisionMember}>{text('创建账号', 'Create account')}</button>
               {memberMessage && <span className="text-sm muted">{memberMessage}</span>}
             </div>
-          </section>}
+          </section>
 
-          {selectedStudent ? <>
-            <section className="panel p-5">
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <h2 className="text-xl font-semibold">{selectedStudent.display_name || selectedStudent.student_id}</h2>
-                  <p className="mt-1 text-sm muted">{selectedStudent.student_id} · {selectedStudent.phone}</p>
-                </div>
-                <button className="btn" onClick={() => setSelectedStudent(null)}>{text('返回学生列表', 'Back to students')}</button>
-              </div>
-              {usage && <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-4">
-                {[[text('消息', 'Messages'), usage.total_chat_messages], [text('会话', 'Conversations'), usage.total_conversations], [text('登录', 'Logins'), usage.total_login_count], [text('机器人提问', 'Robot questions'), usage.total_robot_questions]].map(([label, value]) => <div className="rounded-md bg-[var(--bg-secondary)] p-3 text-center" key={String(label)}><div className="text-2xl font-semibold text-[var(--accent-color)]">{value}</div><div className="mt-1 text-xs muted">{label}</div></div>)}
-              </div>}
-            </section>
-            <section className="panel p-5">
-              <h3 className="mb-3 font-semibold">{text('会话历史', 'Conversation history')}</h3>
-              <div className="space-y-2">
-                {conversations.map(conversation => <button key={conversation.id} onClick={() => selectConversation(conversation.id)} className={`block w-full rounded-md px-4 py-3 text-left text-sm hover:bg-[var(--bg-secondary)] ${selectedConv === conversation.id ? 'bg-[var(--accent-muted)]' : ''}`}>
-                  <div className="flex justify-between gap-3"><span>{conversation.title || conversation.id.slice(0, 8)}</span><span className="text-xs muted">{conversation.updated_at ? new Date(conversation.updated_at).toLocaleDateString(locale) : ''}</span></div>
-                </button>)}
-                {conversations.length === 0 && <p className="text-sm muted">{text('暂无会话。', 'No conversations yet.')}</p>}
-              </div>
-              {selectedConv && messages.length > 0 && <div className="mt-5 space-y-3 border-t border-[var(--border-color)] pt-5">
-                <h3 className="font-semibold">{text('消息内容', 'Messages')}</h3>
-                {messages.map(message => <div key={message.id} className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}><div className={`max-w-[80%] rounded-xl px-4 py-3 text-sm ${message.role === 'user' ? 'bg-[var(--user-message-bg)] text-[var(--user-message-text)]' : 'bg-[var(--bot-message-bg)]'}`}><p className="whitespace-pre-wrap">{message.content}</p><p className="mt-1 text-[10px] opacity-60">{new Date(message.created_at).toLocaleString(locale)}</p></div></div>)}
-              </div>}
-            </section>
-          </> : <div className="flex min-h-32 items-center justify-center text-sm muted">{text('从左侧选择学生查看学习活动。', 'Select a student from the sidebar to view activity.')}</div>}
+          <Link to="/teacher/students" className="panel block p-5"><h2 className="font-semibold">{text('所有学生', 'All students')} →</h2><p className="mt-1 text-sm muted">{text('查看完整学生目录、问答历史、Token 用量和模型详情。', 'Browse all students, chat history, token usage and model details.')}</p></Link>
 
           <section className="panel p-5"><h3 className="mb-3 font-semibold">{text('机器人状态', 'Robot status')}</h3><RobotMonitor role="teacher" /></section>
         </div>

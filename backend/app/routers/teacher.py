@@ -30,11 +30,14 @@ async def list_students(
     page_size: int = Query(20, ge=1, le=100),
     current_user: User = Depends(RequireTeacher),
     db: AsyncSession = Depends(get_db),
+    course_id: str | None = None,
 ):
     offset = (page - 1) * page_size
     query = select(User).join(Enrollment, Enrollment.student_id == User.id).join(Course, Course.id == Enrollment.course_id).where(
         User.role == "student", Course.teacher_id == current_user.id
     ).distinct()
+    if course_id:
+        query = query.where(Course.id == course_id)
     if search:
         query = query.where(
             (User.student_id.ilike(f"%{search}%")) | (User.display_name.ilike(f"%{search}%"))
@@ -45,14 +48,26 @@ async def list_students(
     count_query = select(func.count(func.distinct(User.id))).join(Enrollment, Enrollment.student_id == User.id).join(Course, Course.id == Enrollment.course_id).where(
         User.role == "student", Course.teacher_id == current_user.id
     )
+    if course_id:
+        count_query = count_query.where(Course.id == course_id)
     if search:
         count_query = count_query.where(
             (User.student_id.ilike(f"%{search}%")) | (User.display_name.ilike(f"%{search}%"))
         )
     total = (await db.execute(count_query)).scalar() or 0
 
+    memberships = (await db.execute(
+        select(Enrollment.student_id, Course.id, Course.name)
+        .join(Course, Course.id == Enrollment.course_id)
+        .where(Enrollment.student_id.in_([s.id for s in students]), Course.teacher_id == current_user.id)
+        .order_by(Course.name)
+    )).all() if students else []
+    course_map = {}
+    for uid, cid, name in memberships:
+        course_map.setdefault(uid, []).append({"id": cid, "name": name})
+
     return {
-        "students": [s.to_dict() for s in students],
+        "students": [{**s.to_dict(), "courses": course_map.get(s.id, [])} for s in students],
         "total": total,
         "page": page,
         "page_size": page_size,
@@ -74,7 +89,7 @@ async def get_student_conversations(
     result = await db.execute(
         select(Conversation)
         .where(Conversation.user_id == student_id, teacher_conversation_scope(current_user.id))
-        .order_by(desc(Conversation.updated_at))
+        .order_by(desc(Conversation.updated_at), Conversation.id)
         .offset(offset).limit(page_size)
     )
     conversations = result.scalars().all()
@@ -84,6 +99,29 @@ async def get_student_conversations(
         )
     )).scalar() or 0
 
+    conversation_stats = {}
+    if conversations:
+        stats = (await db.execute(
+            select(
+                Message.conversation_id,
+                func.count(Message.id),
+                func.coalesce(func.sum(Message.token_count), 0),
+                func.max(Message.created_at),
+                func.count(Message.token_count),
+            )
+            .where(Message.conversation_id.in_([conversation.id for conversation in conversations]))
+            .group_by(Message.conversation_id)
+        )).all()
+        conversation_stats = {
+            conversation_id: {
+                "message_count": int(message_count or 0),
+                "total_tokens": int(total_tokens or 0),
+                "last_message_at": last_message_at.isoformat() if last_message_at else None,
+                "recorded_usage_count": recorded_usage_count,
+            }
+            for conversation_id, message_count, total_tokens, last_message_at, recorded_usage_count in stats
+        }
+
     return {
         "conversations": [
             {
@@ -92,6 +130,7 @@ async def get_student_conversations(
                 "course_id": c.course_id,
                 "created_at": c.created_at.isoformat() if c.created_at else None,
                 "updated_at": c.updated_at.isoformat() if c.updated_at else None,
+                **conversation_stats.get(c.id, {"message_count": 0, "total_tokens": 0, "last_message_at": None, "recorded_usage_count": 0}),
             }
             for c in conversations
         ],
@@ -128,7 +167,7 @@ async def get_student_messages(
             Conversation.user_id == student_id,
             teacher_conversation_scope(current_user.id),
         )
-        .order_by(Message.created_at)
+        .order_by(Message.created_at, Message.id)
         .offset(offset).limit(page_size)
     )
     messages = result.scalars().all()
@@ -148,6 +187,11 @@ async def get_student_messages(
                 "content": m.content,
                 "context_source": m.context_source,
                 "created_at": m.created_at.isoformat() if m.created_at else None,
+                "token_count": m.token_count,
+                "prompt_tokens": m.prompt_tokens,
+                "completion_tokens": m.completion_tokens,
+                "model_name": m.model_name,
+                "response_time_ms": m.response_time_ms,
             }
             for m in messages
         ],
@@ -163,7 +207,7 @@ async def get_student_usage(
     current_user: User = Depends(RequireTeacher),
     db: AsyncSession = Depends(get_db),
 ):
-    """Legacy course-scoped usage; no global login or robot activity."""
+    """Return detailed, course-scoped AI usage for a student."""
     if not await teacher_can_access_student(db, current_user.id, student_id):
         raise HTTPException(status_code=403, detail="Student is outside your courses")
     # Message count
@@ -172,6 +216,29 @@ async def get_student_usage(
         .join(Conversation, Message.conversation_id == Conversation.id)
         .where(Conversation.user_id == student_id, teacher_conversation_scope(current_user.id))
     )).scalar() or 0
+
+    ai_filters = [
+        Conversation.user_id == student_id,
+        Message.role == "assistant",
+        teacher_conversation_scope(current_user.id),
+    ]
+    ai_count = (await db.execute(
+        select(func.count(Message.id))
+        .join(Conversation, Message.conversation_id == Conversation.id)
+        .where(*ai_filters)
+    )).scalar() or 0
+    token_totals = (await db.execute(
+        select(
+            func.coalesce(func.sum(Message.prompt_tokens), 0),
+            func.coalesce(func.sum(Message.completion_tokens), 0),
+            func.coalesce(func.sum(Message.token_count), 0),
+            func.count(Message.token_count),
+            func.count(Message.prompt_tokens),
+            func.count(Message.completion_tokens),
+        )
+        .join(Conversation, Message.conversation_id == Conversation.id)
+        .where(*ai_filters)
+    )).one()
 
     # Conversation count
     conv_count = (await db.execute(
@@ -189,6 +256,26 @@ async def get_student_usage(
         .limit(1)
     )).scalar_one_or_none()
 
+    first_msg = (await db.execute(
+        select(Message.created_at)
+        .join(Conversation, Message.conversation_id == Conversation.id)
+        .where(Conversation.user_id == student_id, teacher_conversation_scope(current_user.id))
+        .order_by(Message.created_at)
+        .limit(1)
+    )).scalar_one_or_none()
+    model_rows = (await db.execute(
+        select(
+            Message.model_name,
+            func.count(Message.id),
+            func.sum(Message.token_count),
+            func.count(Message.token_count),
+        )
+        .join(Conversation, Message.conversation_id == Conversation.id)
+        .where(*ai_filters)
+        .group_by(Message.model_name)
+        .order_by(desc(func.count(Message.id)))
+    )).all()
+
     # Student info
     student_result = await db.execute(select(User).where(User.id == student_id))
     student = student_result.scalar_one_or_none()
@@ -202,6 +289,19 @@ async def get_student_usage(
         "last_active_at": last_msg.isoformat() if last_msg else None,
         "total_login_count": None,  # Login and robot events have no reliable course scope.
         "total_robot_questions": None,
+        "total_ai_responses": ai_count,
+        "prompt_tokens": int(token_totals[0] or 0),
+        "completion_tokens": int(token_totals[1] or 0),
+        "total_tokens": int(token_totals[2] or 0),
+        "first_active_at": first_msg.isoformat() if first_msg else None,
+        "recorded_usage_count": token_totals[3],
+        "missing_usage_count": ai_count - token_totals[3],
+        "recorded_prompt_count": token_totals[4],
+        "recorded_completion_count": token_totals[5],
+        "models": [
+            {"model_name": model_name, "responses": responses, "total_tokens": tokens, "recorded_usage_count": recorded}
+            for model_name, responses, tokens, recorded in model_rows
+        ],
     }
 
 

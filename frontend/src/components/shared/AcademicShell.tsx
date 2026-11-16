@@ -34,6 +34,7 @@ export default function AcademicShell({ role, eyebrow, title, description, child
     { label: text('师生沟通', 'Messages'), to: '/ta/messages' },
   ] : [
     { label: text('教学概览', 'Overview'), to: '/teacher', end: true },
+    { label: text('所有学生', 'All students'), to: '/teacher/students' },
     { label: text('课程资料', 'Course materials'), to: '/teacher/materials' },
     { label: text('BRIDGE 管理', 'BRIDGE administration'), to: '/teacher/bridge' },
     { label: text('作业管理', 'Assignments'), to: '/teacher/assignments' },

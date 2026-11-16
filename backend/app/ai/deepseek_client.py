@@ -321,7 +321,7 @@ async def get_deepseek_response(
     Returns dict with keys: response (str), context_source (str), filename_display (str)
     """
     if not settings.DEEPSEEK_API_KEY:
-        return {"response": "Error: DeepSeek API key is not configured.", "context_source": "none", "filename_display": "", "guided_question": None}
+        return {"response": "Error: DeepSeek API key is not configured.", "context_source": "none", "filename_display": "", "guided_question": None, "model_name": settings.DEEPSEEK_MODEL_NAME, "usage": {}}
 
     try:
         messages = []
@@ -351,7 +351,7 @@ async def get_deepseek_response(
                 elif filename.lower().endswith('.docx'):
                     file_context = extract_text_from_docx(file_data)
                 else:
-                    return {"response": f"Unsupported file type: '{filename}'", "context_source": "none", "filename_display": ""}
+                    return {"response": f"Unsupported file type: '{filename}'", "context_source": "none", "filename_display": "", "model_name": model_name, "usage": {}}
                 context_source = "manual_file"
                 filename_display = filename
 
@@ -465,11 +465,20 @@ async def get_deepseek_response(
         if guided_mode and guided_question is None:
             guided_question = fallback_guided_question(user_question)
 
+        response_usage = getattr(response, "usage", None)
+        usage = {
+            "prompt_tokens": getattr(response_usage, "prompt_tokens", None),
+            "completion_tokens": getattr(response_usage, "completion_tokens", None),
+            "total_tokens": getattr(response_usage, "total_tokens", None),
+        }
+
         return {
             "response": ai_response,
             "context_source": context_source,
             "filename_display": filename_display,
             "guided_question": guided_question,
+            "model_name": getattr(response, "model", None) or model_name,
+            "usage": usage,
         }
 
     except Exception as e:
@@ -479,4 +488,6 @@ async def get_deepseek_response(
             "context_source": "none",
             "filename_display": "",
             "guided_question": None,
+            "model_name": settings.DEEPSEEK_MODEL_NAME,
+            "usage": {},
         }
